@@ -1,0 +1,21 @@
+# Webhook 実行ログ (サーバー側でのみ生成される)
+webhook.log
+ 
+# git認証情報 (本来はホームディレクトリに置かれるが念のため)
+.git-credentials
+ 
+# サーバー上で生成されるログ全般
+*.log
+ 
+# データベース等、サーバー固有のデータ
+*.db
+*.sqlite
+*.sqlite3
+ 
+# OS固有のファイル
+.DS_Store
+Thumbs.db
+ 
+# エディタ設定
+.vscode/
+.idea/
