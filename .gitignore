@@ -19,3 +19,10 @@ Thumbs.db
 # エディタ設定
 .vscode/
 .idea/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
