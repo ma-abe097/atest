@@ -231,6 +231,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $owner        = trim((string) ($_POST['owner'] ?? ''));
         $notes        = trim((string) ($_POST['notes'] ?? ''));
 
+        // APIキー(値)の入力。secret_clear=1 でクリア、空欄なら現状維持、値ありで暗号化保存。
+        $secretIn   = (string) ($_POST['secret'] ?? '');
+        $secretClear = !empty($_POST['secret_clear']);
+        $secretEnc = $secretHint = $secretFp = null;
+        $secretMode = 'keep';   // keep | set | clear
+        if ($secretClear) {
+            $secretMode = 'clear';
+        } elseif ($secretIn !== '') {
+            if (!encryption_ready()) {
+                flash('err', 'キーを保存するには APP_ENCRYPTION_KEY の設定が必要です（config.local.php）。');
+                redirect_self();
+            }
+            $secretEnc  = encrypt_secret($secretIn);
+            $secretHint = secret_hint($secretIn);
+            $secretFp   = secret_fingerprint($secretIn);
+            $secretMode = 'set';
+        }
+
         if ($name === '') {
             flash('err', 'API名は必須です。');
             redirect_self();
@@ -238,13 +256,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($id === null) {
             $stmt = $pdo->prepare(
-                'INSERT INTO apis (group_id, name, provider, site, status, monthly_cost, currency, billing_url, key_location, docs_url, owner, notes, created_at, updated_at)
-                 VALUES (:gid,:name,:provider,:site,:status,:cost,:cur,:bill,:key,:docs,:owner,:notes,:ca,:ua)'
+                'INSERT INTO apis (group_id, name, provider, site, status, monthly_cost, currency, billing_url, key_location, docs_url, owner, notes, secret_enc, secret_hint, secret_fp, created_at, updated_at)
+                 VALUES (:gid,:name,:provider,:site,:status,:cost,:cur,:bill,:key,:docs,:owner,:notes,:senc,:shint,:sfp,:ca,:ua)'
             );
             $stmt->execute([
                 ':gid'=>$gid, ':name'=>$name, ':provider'=>$provider, ':site'=>$site, ':status'=>$status, ':cost'=>$monthly_cost,
                 ':cur'=>$currency, ':bill'=>$billing_url, ':key'=>$key_location, ':docs'=>$docs_url,
-                ':owner'=>$owner, ':notes'=>$notes, ':ca'=>now(), ':ua'=>now(),
+                ':owner'=>$owner, ':notes'=>$notes,
+                ':senc'=>$secretMode==='set'?$secretEnc:null, ':shint'=>$secretMode==='set'?$secretHint:null, ':sfp'=>$secretMode==='set'?$secretFp:null,
+                ':ca'=>now(), ':ua'=>now(),
             ]);
             flash('ok', 'APIを追加しました。');
         } else {
@@ -260,6 +280,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':cur'=>$currency, ':bill'=>$billing_url, ':key'=>$key_location, ':docs'=>$docs_url,
                 ':owner'=>$owner, ':notes'=>$notes, ':ua'=>now(), ':id'=>$id, ':gid'=>$gid,
             ]);
+            // キーは入力があった時だけ更新（通常編集では維持）
+            if ($secretMode === 'set') {
+                $pdo->prepare('UPDATE apis SET secret_enc=:e, secret_hint=:h, secret_fp=:f WHERE id=:id AND group_id=:gid')
+                    ->execute([':e'=>$secretEnc, ':h'=>$secretHint, ':f'=>$secretFp, ':id'=>$id, ':gid'=>$gid]);
+            } elseif ($secretMode === 'clear') {
+                $pdo->prepare('UPDATE apis SET secret_enc=NULL, secret_hint=NULL, secret_fp=NULL WHERE id=:id AND group_id=:gid')
+                    ->execute([':id'=>$id, ':gid'=>$gid]);
+            }
             flash('ok', 'APIを更新しました。');
         }
         redirect_self();
@@ -860,6 +888,13 @@ function render_scan_page(array $user, array $group, int $gid): void
         <div class="stat"><div class="label">金額未設定</div><div class="value"><?= $unsetCount ?> <small>件（合計に含まず）</small></div></div>
     </div>
 
+    <?php if (can_manage() && !encryption_ready()): ?>
+        <div class="flash" style="background:#fff4e0;color:#92400e">
+            🔐 コスト自動取得に向けて<strong>キーの暗号化保存</strong>を使うには、<code>config.local.php</code> に <code>APP_ENCRYPTION_KEY</code> を設定してください。<br>
+            <span class="hint">生成: サーバーで <code>php -r "echo base64_encode(random_bytes(32)).PHP_EOL;"</code> を実行し、出た文字列を設定。</span>
+        </div>
+    <?php endif; ?>
+
     <?php if ($legacyCount > 0 && can_manage()): ?>
         <div class="flash" style="background:#fff4e0;color:#92400e;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
             <span>旧形式（サイト未設定）のエントリが <strong><?= $legacyCount ?></strong> 件あります。<strong>まず再スキャンしてサイト別の新エントリを作ってから</strong>、古いものを削除して整理してください。<br><span class="hint">※削除すると、その旧エントリに手入力したコスト等も消えます。必要な値は新エントリへ移してから削除を。</span></span>
@@ -986,6 +1021,7 @@ function render_scan_page(array $user, array $group, int $gid): void
                 </td>
                 <td>
                     <?php if ($a['key_location'] !== ''): ?>🔑 <?= h($a['key_location']) ?><?php else: ?><span class="muted">—</span><?php endif; ?>
+                    <?php if (!empty($a['secret_hint'])): ?><div class="hint">🔐 <?= h($a['secret_hint']) ?> <span class="muted">保存済み</span></div><?php endif; ?>
                 </td>
                 <td class="cost">
                     <?= fmt_money($a['monthly_cost'] === null ? null : (float) $a['monthly_cost'], $a['currency']) ?>
@@ -998,8 +1034,9 @@ function render_scan_page(array $user, array $group, int $gid): void
                 </td>
                 <?php if ($editable): ?>
                 <td>
+                    <?php $aEdit = $a; unset($aEdit['secret_enc'], $aEdit['secret_fp']); ?>
                     <button class="link" type="button"
-                        onclick='openEdit(<?= json_encode($a, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
+                        onclick='openEdit(<?= json_encode($aEdit, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
                     <form method="post" style="display:inline" onsubmit="return confirm('「<?= h($a['name']) ?>（<?= h($a['site'] ?: 'サイト未設定') ?>）」を削除しますか？')">
                         <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
                         <input type="hidden" name="action" value="delete_api">
@@ -1082,7 +1119,18 @@ function render_scan_page(array $user, array $group, int $gid): void
                 <div class="field"><label>通貨</label><select name="currency" id="f_currency"><?php foreach (['JPY','USD','EUR','GBP'] as $c): ?><option value="<?= $c ?>"><?= $c ?></option><?php endforeach; ?></select></div>
                 <div class="field"><label>status</label><select name="status" id="f_status"><?php foreach (STATUSES as $k => $v): ?><option value="<?= h($k) ?>"><?= h($v) ?></option><?php endforeach; ?></select></div>
                 <div class="field"><label>担当 (owner)</label><input name="owner" id="f_owner" placeholder="例: 開発チーム"></div>
-                <div class="field full"><label>鍵の在りか (key_location)</label><input name="key_location" id="f_key" placeholder="例: env: OPENAI_API_KEY"><div class="hint">⚠ APIキー本体は入力しないでください。環境変数名など「在りか」のみ。</div></div>
+                <div class="field full"><label>鍵の在りか (key_location)</label><input name="key_location" id="f_key" placeholder="例: env: OPENAI_API_KEY"><div class="hint">環境変数名など「在りか」。下の「APIキー(値)」とは別です。</div></div>
+                <div class="field full" style="border-top:1px dashed var(--line);padding-top:10px">
+                    <label>🔐 APIキー（値）— コスト自動取得用</label>
+                    <input type="password" name="secret" id="f_secret" autocomplete="new-password" placeholder="ここにキーの値を貼る（暗号化保存）">
+                    <div class="hint" id="f_secret_state"></div>
+                    <label style="font-weight:400;font-size:12px;display:inline-flex;align-items:center;gap:4px;margin-top:4px">
+                        <input type="checkbox" name="secret_clear" id="f_secret_clear" value="1" style="width:auto"> 保存済みのキーを削除する
+                    </label>
+                    <div class="hint"><?= encryption_ready()
+                        ? '暗号化して保存します。空欄なら現状維持（既存キーはそのまま）。'
+                        : '⚠ APP_ENCRYPTION_KEY が未設定のため、キー値は保存できません（config.local.php に設定してください）。' ?></div>
+                </div>
                 <div class="field"><label>請求ページURL (billing_url)</label><input name="billing_url" id="f_billing" type="url" placeholder="https://..."></div>
                 <div class="field"><label>ドキュメントURL (docs_url)</label><input name="docs_url" id="f_docs" type="url" placeholder="https://..."></div>
                 <div class="field full"><label>メモ (notes)</label><textarea name="notes" id="f_notes" rows="3" placeholder="補足・コスト変動の理由など"></textarea></div>
@@ -1099,11 +1147,13 @@ function render_scan_page(array $user, array $group, int $gid): void
     function openCreate() {
         document.getElementById('modalTitle').textContent = 'API を追加';
         document.getElementById('f_id').value = '';
-        for (const f of ['name','provider','site','cost','owner','key','billing','docs','notes']) {
+        for (const f of ['name','provider','site','cost','owner','key','billing','docs','notes','secret']) {
             const el = document.getElementById('f_' + f); if (el) el.value = '';
         }
         document.getElementById('f_currency').value = 'JPY';
         document.getElementById('f_status').value = 'unknown';
+        document.getElementById('f_secret_clear').checked = false;
+        document.getElementById('f_secret_state').textContent = '';
         dialog.showModal();
     }
     function openEdit(a) {
@@ -1120,6 +1170,10 @@ function render_scan_page(array $user, array $group, int $gid): void
         document.getElementById('f_billing').value  = a.billing_url ?? '';
         document.getElementById('f_docs').value     = a.docs_url ?? '';
         document.getElementById('f_notes').value    = a.notes ?? '';
+        document.getElementById('f_secret').value    = '';
+        document.getElementById('f_secret_clear').checked = false;
+        document.getElementById('f_secret_state').textContent =
+            a.secret_hint ? ('現在: 🔐 ' + a.secret_hint + '（変更する時だけ入力）') : 'キー未保存';
         dialog.showModal();
     }
 </script>

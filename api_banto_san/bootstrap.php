@@ -318,7 +318,75 @@ function db(): PDO
         $pdo->exec("ALTER TABLE apis ADD COLUMN site TEXT NOT NULL DEFAULT ''");
     }
 
+    // キー暗号化保存: secret_enc(暗号文) / secret_hint(伏字) / secret_fp(指紋)
+    $apiCols = array_column($pdo->query('PRAGMA table_info(apis)')->fetchAll(), 'name');
+    foreach (['secret_enc' => 'TEXT', 'secret_hint' => 'TEXT', 'secret_fp' => 'TEXT'] as $col => $type) {
+        if (!in_array($col, $apiCols, true)) {
+            $pdo->exec("ALTER TABLE apis ADD COLUMN $col $type");
+        }
+    }
+
     return $pdo;
+}
+
+/* ------------------------------------------------------------------ *
+ *  キーの暗号化（AES-256-GCM）。マスター鍵は config(APP_ENCRYPTION_KEY)。
+ *  保存するのは暗号文のみ。DBが漏れても鍵が無ければ復号できない。
+ * ------------------------------------------------------------------ */
+function encryption_key(): ?string
+{
+    $b64 = trim((string) config('APP_ENCRYPTION_KEY', ''));
+    if ($b64 === '') {
+        return null;
+    }
+    $raw = base64_decode($b64, true);
+    return ($raw !== false && strlen($raw) === 32) ? $raw : null;
+}
+
+function encryption_ready(): bool { return encryption_key() !== null; }
+
+/** 平文 → base64(iv|tag|cipher)。鍵未設定/失敗なら null */
+function encrypt_secret(string $plain): ?string
+{
+    $key = encryption_key();
+    if ($key === null || !function_exists('openssl_encrypt')) {
+        return null;
+    }
+    $iv = random_bytes(12);
+    $tag = '';
+    $ct = openssl_encrypt($plain, 'aes-256-gcm', $key, OPENSSL_RAW_DATA, $iv, $tag);
+    return $ct === false ? null : base64_encode($iv . $tag . $ct);
+}
+
+/** base64(iv|tag|cipher) → 平文。失敗なら null */
+function decrypt_secret(?string $stored): ?string
+{
+    if ($stored === null || $stored === '') {
+        return null;
+    }
+    $key = encryption_key();
+    if ($key === null) {
+        return null;
+    }
+    $raw = base64_decode($stored, true);
+    if ($raw === false || strlen($raw) < 29) {
+        return null;
+    }
+    $iv = substr($raw, 0, 12);
+    $tag = substr($raw, 12, 16);
+    $ct = substr($raw, 28);
+    $pt = openssl_decrypt($ct, 'aes-256-gcm', $key, OPENSSL_RAW_DATA, $iv, $tag);
+    return $pt === false ? null : $pt;
+}
+
+/** 同じ鍵か判別するための指紋（値そのものは復元不可） */
+function secret_fingerprint(string $plain): string { return substr(hash('sha256', $plain), 0, 16); }
+
+/** 表示用の伏字（末尾4文字のみ） */
+function secret_hint(string $plain): string
+{
+    $n = strlen($plain);
+    return $n <= 4 ? str_repeat('•', max($n, 1)) : '••••' . substr($plain, -4);
 }
 
 /* ------------------------------------------------------------------ *
