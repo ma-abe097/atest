@@ -30,6 +30,9 @@ const ROLES = [
 ];
 const ROLE_RANK = ['viewer' => 0, 'member' => 1, 'admin' => 2, 'owner' => 3];
 
+// スキャナ検出エンジン（redact_secrets / scan_directory / load_providers を提供）
+require_once __DIR__ . '/lib/scanner.php';
+
 /* ------------------------------------------------------------------ *
  *  設定
  * ------------------------------------------------------------------ */
@@ -233,6 +236,31 @@ function db(): PDO
             file    TEXT    NOT NULL DEFAULT '',
             line    INTEGER,
             snippet TEXT    NOT NULL DEFAULT ''
+        )
+    SQL);
+
+    // CLIプッシュ用の個人用トークン。トークン本体は保存せずハッシュのみ（仕様書 §4）。
+    $pdo->exec(<<<SQL
+        CREATE TABLE IF NOT EXISTS api_tokens (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            token_hash   TEXT    NOT NULL UNIQUE,
+            label        TEXT    NOT NULL DEFAULT '',
+            last_used_at TEXT,
+            revoked      INTEGER NOT NULL DEFAULT 0,
+            created_at   TEXT    NOT NULL
+        )
+    SQL);
+
+    // 保存済みスキャン対象（option 1: ワンクリック再スキャン用）
+    $pdo->exec(<<<SQL
+        CREATE TABLE IF NOT EXISTS scan_targets (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_id        INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+            label           TEXT    NOT NULL DEFAULT '',
+            path            TEXT    NOT NULL,
+            last_scanned_at TEXT,
+            created_at      TEXT    NOT NULL
         )
     SQL);
 
@@ -620,4 +648,262 @@ function google_handle_callback(): array
         (string) ($info['name'] ?? ''),
         (string) ($info['picture'] ?? '')
     );
+}
+
+/* ------------------------------------------------------------------ *
+ *  CLI 個人用トークン（push 用）。本体は保存せずハッシュのみ（仕様書 §4）。
+ * ------------------------------------------------------------------ */
+/** 新規トークンを発行し、本体（一度だけ表示用）を返す */
+function issue_api_token(int $userId, string $label): string
+{
+    $plain = 'abt_' . bin2hex(random_bytes(24));   // 表示はこの一度きり
+    db()->prepare('INSERT INTO api_tokens (user_id, token_hash, label, created_at) VALUES (:u,:h,:l,:c)')
+        ->execute([':u' => $userId, ':h' => hash('sha256', $plain), ':l' => $label, ':c' => now()]);
+    return $plain;
+}
+
+/** Bearer トークンを検証し、有効ならユーザー行を返す。last_used_at を更新。 */
+function verify_api_token(string $plain): ?array
+{
+    if ($plain === '') {
+        return null;
+    }
+    $hash = hash('sha256', $plain);
+    $stmt = db()->prepare(
+        'SELECT t.id AS token_id, u.* FROM api_tokens t JOIN users u ON u.id = t.user_id
+         WHERE t.token_hash = :h AND t.revoked = 0'
+    );
+    $stmt->execute([':h' => $hash]);
+    $row = $stmt->fetch();
+    if (!$row) {
+        return null;
+    }
+    db()->prepare('UPDATE api_tokens SET last_used_at = :t WHERE id = :id')
+        ->execute([':t' => now(), ':id' => $row['token_id']]);
+    return $row;
+}
+
+function list_api_tokens(int $userId): array
+{
+    $stmt = db()->prepare('SELECT id, label, last_used_at, revoked, created_at FROM api_tokens WHERE user_id = :u ORDER BY created_at DESC');
+    $stmt->execute([':u' => $userId]);
+    return $stmt->fetchAll();
+}
+
+function revoke_api_token(int $userId, int $tokenId): void
+{
+    db()->prepare('UPDATE api_tokens SET revoked = 1 WHERE id = :id AND user_id = :u')
+        ->execute([':id' => $tokenId, ':u' => $userId]);
+}
+
+/* ------------------------------------------------------------------ *
+ *  スキャン結果のマージ（in-app スキャン / push API 共通）
+ * --------------------------------------------------------------------
+ *  自動フィールド（usages / detected_by / last_scanned / 空なら provider・
+ *  key_location）のみ更新し、手動フィールド（monthly_cost / notes / status /
+ *  owner / currency / billing_url / docs_url）は保持する（仕様書 §4）。
+ *  戻り値: ['created'=>n, 'updated'=>n, 'usages'=>n]
+ * ------------------------------------------------------------------ */
+function merge_scan_results(int $gid, array $apis): array
+{
+    $pdo = db();
+    $created = $updated = $usageCount = 0;
+    $nowTs = now();
+
+    $findStmt = $pdo->prepare('SELECT * FROM apis WHERE group_id = :g AND LOWER(name) = LOWER(:n) LIMIT 1');
+    $insStmt  = $pdo->prepare(
+        'INSERT INTO apis (group_id, name, provider, status, currency, key_location, detected_by, last_scanned, created_at, updated_at)
+         VALUES (:g,:name,:provider,\'unknown\',\'JPY\',:key,:det,:scan,:ca,:ua)'
+    );
+    $updStmt  = $pdo->prepare(
+        'UPDATE apis SET detected_by = :det, last_scanned = :scan, updated_at = :ua,
+             provider = CASE WHEN provider = \'\' THEN :provider ELSE provider END,
+             key_location = CASE WHEN key_location = \'\' THEN :key ELSE key_location END
+         WHERE id = :id'
+    );
+    $delUse = $pdo->prepare('DELETE FROM usages WHERE api_id = :id');
+    $insUse = $pdo->prepare('INSERT INTO usages (api_id, repo, file, line, snippet) VALUES (:aid,:repo,:file,:line,:snip)');
+
+    $pdo->beginTransaction();
+    try {
+        foreach ($apis as $a) {
+            $name = trim((string) ($a['name'] ?? ($a['provider'] ?? '')));
+            if ($name === '') {
+                continue;
+            }
+            $provider = trim((string) ($a['provider'] ?? ''));
+            $keyLoc   = trim((string) ($a['key_location'] ?? ''));
+            $detected = $a['detected_by'] ?? [];
+            $detStr   = is_array($detected) ? implode(', ', array_slice(array_unique($detected), 0, 20)) : (string) $detected;
+
+            $findStmt->execute([':g' => $gid, ':n' => $name]);
+            $existing = $findStmt->fetch();
+
+            if ($existing) {
+                $apiId = (int) $existing['id'];
+                $updStmt->execute([':det' => $detStr, ':scan' => $nowTs, ':ua' => $nowTs, ':provider' => $provider, ':key' => $keyLoc, ':id' => $apiId]);
+                $updated++;
+            } else {
+                $insStmt->execute([':g' => $gid, ':name' => $name, ':provider' => $provider, ':key' => $keyLoc, ':det' => $detStr, ':scan' => $nowTs, ':ca' => $nowTs, ':ua' => $nowTs]);
+                $apiId = (int) $pdo->lastInsertId();
+                $created++;
+            }
+
+            // usages は自動フィールド: 今回の検出結果で置き換える
+            $delUse->execute([':id' => $apiId]);
+            foreach (($a['usages'] ?? []) as $u) {
+                $insUse->execute([
+                    ':aid'  => $apiId,
+                    ':repo' => (string) ($u['repo'] ?? ''),
+                    ':file' => (string) ($u['file'] ?? ''),
+                    ':line' => isset($u['line']) && $u['line'] !== '' ? (int) $u['line'] : null,
+                    ':snip' => redact_secrets((string) ($u['snippet'] ?? '')),
+                ]);
+                $usageCount++;
+            }
+        }
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+
+    return ['created' => $created, 'updated' => $updated, 'usages' => $usageCount];
+}
+
+/* ------------------------------------------------------------------ *
+ *  保存済みスキャン対象（option 1）
+ * ------------------------------------------------------------------ */
+function list_scan_targets(int $gid): array
+{
+    $stmt = db()->prepare('SELECT * FROM scan_targets WHERE group_id = :g ORDER BY label, id');
+    $stmt->execute([':g' => $gid]);
+    return $stmt->fetchAll();
+}
+
+function add_scan_target(int $gid, string $label, string $path): void
+{
+    db()->prepare('INSERT INTO scan_targets (group_id, label, path, created_at) VALUES (:g,:l,:p,:c)')
+        ->execute([':g' => $gid, ':l' => $label, ':p' => $path, ':c' => now()]);
+}
+
+function delete_scan_target(int $gid, int $id): void
+{
+    db()->prepare('DELETE FROM scan_targets WHERE id = :id AND group_id = :g')->execute([':id' => $id, ':g' => $gid]);
+}
+
+function touch_scan_target(int $id): void
+{
+    db()->prepare('UPDATE scan_targets SET last_scanned_at = :t WHERE id = :id')->execute([':t' => now(), ':id' => $id]);
+}
+
+/* ------------------------------------------------------------------ *
+ *  スキャン実行（ディレクトリ）— in-app スキャンの共通処理
+ *  SCAN_ALLOWED_ROOT が設定されていればその配下のみ許可。
+ *  戻り値: merge_scan_results の結果
+ * ------------------------------------------------------------------ */
+function run_scan_on_dir(int $gid, string $path, string $repo): array
+{
+    $real = $path !== '' ? realpath($path) : false;
+    if ($real === false || !is_dir($real)) {
+        throw new RuntimeException('ディレクトリが見つかりません: ' . $path);
+    }
+    $allowedRoot = config('SCAN_ALLOWED_ROOT');
+    if ($allowedRoot) {
+        $rootReal = realpath((string) $allowedRoot);
+        if ($rootReal === false || strncmp($real, $rootReal, strlen($rootReal)) !== 0) {
+            throw new RuntimeException('そのパスはスキャン許可ディレクトリ(SCAN_ALLOWED_ROOT)の外です。');
+        }
+    }
+    $providers = load_providers(__DIR__ . '/scanner/providers.json');
+    $found = scan_directory($real, $providers, ['repo' => ($repo !== '' ? $repo : basename($real))]);
+    return merge_scan_results($gid, $found);
+}
+
+/* ------------------------------------------------------------------ *
+ *  ZIP アップロードのスキャン（PC/Gドライブのコード用）
+ *  アップロードされた zip を一時ディレクトリに安全に展開して走査する。
+ * ------------------------------------------------------------------ */
+function run_scan_on_zip(int $gid, array $file, string $repo): array
+{
+    if (!class_exists('ZipArchive')) {
+        throw new RuntimeException('このサーバでは ZIP 展開(ZipArchive)が使えません。CLI/Pythonスキャナをご利用ください。');
+    }
+    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'] ?? '')) {
+        throw new RuntimeException('ファイルのアップロードに失敗しました。');
+    }
+
+    $zip = new ZipArchive();
+    if ($zip->open($file['tmp_name']) !== true) {
+        throw new RuntimeException('ZIPを開けませんでした。');
+    }
+
+    // 展開先の一時ディレクトリ
+    $tmpRoot = sys_get_temp_dir() . '/abt_scan_' . bin2hex(random_bytes(6));
+    if (!mkdir($tmpRoot, 0700, true) && !is_dir($tmpRoot)) {
+        throw new RuntimeException('一時ディレクトリを作成できませんでした。');
+    }
+
+    $maxEntries = 8000;
+    $maxBytes   = 80 * 1024 * 1024;   // 展開後 80MB 上限
+    $totalBytes = 0;
+
+    try {
+        for ($i = 0; $i < $zip->numFiles && $i < $maxEntries; $i++) {
+            $st = $zip->statIndex($i);
+            if ($st === false) {
+                continue;
+            }
+            $name = (string) $st['name'];
+            // Zip Slip 対策: 絶対パス・.. を含むエントリは拒否
+            $name = str_replace('\\', '/', $name);
+            if ($name === '' || str_starts_with($name, '/') || preg_match('#(^|/)\.\.(/|$)#', $name)) {
+                continue;
+            }
+            $totalBytes += (int) $st['size'];
+            if ($totalBytes > $maxBytes) {
+                throw new RuntimeException('展開サイズが大きすぎます（上限80MB）。CLI/Pythonスキャナをご利用ください。');
+            }
+            $dest = $tmpRoot . '/' . $name;
+            if (str_ends_with($name, '/')) {
+                @mkdir($dest, 0700, true);
+                continue;
+            }
+            @mkdir(dirname($dest), 0700, true);
+            $stream = $zip->getStream($st['name']);
+            if ($stream) {
+                $out = fopen($dest, 'wb');
+                if ($out) {
+                    stream_copy_to_stream($stream, $out);
+                    fclose($out);
+                }
+                fclose($stream);
+            }
+        }
+        $zip->close();
+
+        $label = $repo !== '' ? $repo : preg_replace('/\.zip$/i', '', (string) ($file['name'] ?? 'upload'));
+        $providers = load_providers(__DIR__ . '/scanner/providers.json');
+        $found = scan_directory($tmpRoot, $providers, ['repo' => $label]);
+        $res = merge_scan_results($gid, $found);
+    } finally {
+        rrmdir($tmpRoot);
+    }
+    return $res;
+}
+
+/** ディレクトリを再帰削除 */
+function rrmdir(string $dir): void
+{
+    if (!is_dir($dir)) {
+        return;
+    }
+    $items = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::CHILD_FIRST
+    );
+    foreach ($items as $item) {
+        $item->isDir() ? @rmdir($item->getPathname()) : @unlink($item->getPathname());
+    }
+    @rmdir($dir);
 }

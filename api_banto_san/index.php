@@ -99,6 +99,96 @@ $gid   = current_group_id();      // 所属グループ先頭に補正済み
 $group = current_group();
 $role  = current_role();
 
+/* ================================================================== *
+ *  個人用トークン画面（CLI push 用トークンの発行・失効）
+ * ================================================================== */
+if ($route === 'tokens') {
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        check_csrf();
+        $a = $_POST['action'] ?? '';
+        if ($a === 'create_token') {
+            $label = trim((string) ($_POST['label'] ?? '')) ?: 'token';
+            $_SESSION['new_token'] = issue_api_token((int) $user['id'], $label);
+            flash('ok', '個人用トークンを発行しました。表示は一度だけです。今すぐコピーしてください。');
+        } elseif ($a === 'revoke_token') {
+            revoke_api_token((int) $user['id'], (int) ($_POST['token_id'] ?? 0));
+            flash('ok', 'トークンを失効しました。');
+        }
+        redirect(app_url('tokens'));
+    }
+    render_tokens_page($user);
+    exit;
+}
+
+/* ================================================================== *
+ *  サーバ内スキャン画面（heteml 上のファイルを直接走査・admin 以上）
+ * ================================================================== */
+if ($route === 'scan') {
+    require_role_at_least($gid, 'admin');
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        check_csrf();
+        $a = $_POST['action'] ?? '';
+
+        // スキャン結果メッセージの共通整形
+        $say = static function (array $res): void {
+            flash('ok', sprintf('スキャン完了: 新規 %d 件 / 更新 %d 件 / 使用箇所 %d 件を反映（手動入力のコスト等は保持）。',
+                $res['created'], $res['updated'], $res['usages']));
+        };
+
+        try {
+            if ($a === 'add_target') {
+                $path = trim((string) ($_POST['path'] ?? ''));
+                $label = trim((string) ($_POST['label'] ?? '')) ?: basename(rtrim($path, '/\\'));
+                if ($path === '' || realpath($path) === false || !is_dir((string) realpath($path))) {
+                    flash('err', 'ディレクトリが見つかりません: ' . $path);
+                } else {
+                    add_scan_target($gid, $label, $path);
+                    flash('ok', 'スキャン対象を保存しました。次回からワンクリックでスキャンできます。');
+                }
+            } elseif ($a === 'delete_target') {
+                delete_scan_target($gid, (int) ($_POST['target_id'] ?? 0));
+                flash('ok', 'スキャン対象を削除しました。');
+            } elseif ($a === 'run_target') {
+                $targets = list_scan_targets($gid);
+                $tid = (int) ($_POST['target_id'] ?? 0);
+                $t = null;
+                foreach ($targets as $row) { if ((int) $row['id'] === $tid) { $t = $row; break; } }
+                if (!$t) {
+                    flash('err', '対象が見つかりません。');
+                } else {
+                    $say(run_scan_on_dir($gid, $t['path'], $t['label']));
+                    touch_scan_target($tid);
+                }
+            } elseif ($a === 'run_all') {
+                $targets = list_scan_targets($gid);
+                if (!$targets) {
+                    flash('err', '保存済みのスキャン対象がありません。');
+                } else {
+                    $tot = ['created' => 0, 'updated' => 0, 'usages' => 0];
+                    foreach ($targets as $t) {
+                        $r = run_scan_on_dir($gid, $t['path'], $t['label']);
+                        foreach ($tot as $k => $_) { $tot[$k] += $r[$k]; }
+                        touch_scan_target((int) $t['id']);
+                    }
+                    $say($tot);
+                }
+            } elseif ($a === 'run_path') {
+                $path = trim((string) ($_POST['path'] ?? ''));
+                $repo = trim((string) ($_POST['repo'] ?? ''));
+                $say(run_scan_on_dir($gid, $path, $repo));
+            } elseif ($a === 'upload_scan') {
+                $repo = trim((string) ($_POST['repo'] ?? ''));
+                $say(run_scan_on_zip($gid, $_FILES['zipfile'] ?? [], $repo));
+            }
+        } catch (Throwable $e) {
+            flash('err', 'スキャンに失敗しました: ' . $e->getMessage());
+        }
+        redirect(app_url('scan'));
+    }
+    render_scan_page($user, $group, $gid);
+    exit;
+}
+
 /* ------------------------------------------------------------------ *
  *  POST 処理（カタログ編集）— すべてサーバ側で権限チェック
  * ------------------------------------------------------------------ */
@@ -391,6 +481,208 @@ function render_login_page(): void
 </div></body></html>
     <?php
 }
+
+/** 個人用トークン画面 */
+function render_tokens_page(array $user): void
+{
+    $tokens   = list_api_tokens((int) $user['id']);
+    $newToken = $_SESSION['new_token'] ?? null;
+    unset($_SESSION['new_token']);
+    $flashMsg = take_flash();
+    $csrf     = csrf_token();
+    $endpoint = app_base_url() . '/api.php';
+    ?>
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><?= h(APP_NAME) ?> — 個人用トークン</title>
+<?php render_styles(); ?>
+</head><body>
+<header class="app">
+    <h1>🛡️ <?= h(APP_NAME) ?></h1><span class="tag">個人用トークン</span>
+    <span class="spacer"></span>
+    <a class="navlink" href="index.php">← ダッシュボードへ</a>
+    <a class="navlink" href="<?= h(app_url('logout')) ?>">ログアウト</a>
+</header>
+<div class="wrap" style="max-width:760px">
+    <?php if ($flashMsg): ?><div class="flash <?= h($flashMsg[0]) ?>"><?= h($flashMsg[1]) ?></div><?php endif; ?>
+
+    <?php if ($newToken): ?>
+        <div class="stat" style="background:#fffbe6;border-color:#facc15;width:100%">
+            <div class="label">発行されたトークン（この表示は一度きり）</div>
+            <code style="font-size:14px;display:block;margin:6px 0;word-break:break-all"><?= h($newToken) ?></code>
+            <div class="hint">CLI では環境変数 <code>APICATALOG_TOKEN</code> に設定して使います。</div>
+        </div>
+    <?php endif; ?>
+
+    <div class="stat" style="width:100%;margin-bottom:14px">
+        <h2 style="margin:0 0 8px;font-size:16px">スキャナCLI の使い方</h2>
+        <p class="hint" style="margin:0 0 8px">SSH やローカルPCで <code>scan.php</code> を実行し、検出結果をこのサイトへ送信します。コスト金額はコードからは取得しません（Web UIで手動入力）。再送信時も手動入力のコスト・メモ・status は保持されます。</p>
+        <code style="display:block;white-space:pre-wrap;font-size:12.5px">export APICATALOG_TOKEN="発行したトークン"
+php scan.php --path /path/to/site --push \
+  --endpoint <?= h($endpoint) ?> \
+  --group <?= h((string) (current_group_id() ?? '')) ?></code>
+    </div>
+
+    <div class="stat" style="width:100%;margin-bottom:14px">
+        <h2 style="margin:0 0 10px;font-size:16px">新しいトークンを発行</h2>
+        <form method="post" class="row" style="display:flex;gap:8px">
+            <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+            <input type="hidden" name="action" value="create_token">
+            <input name="label" placeholder="用途ラベル（例: my-macbook）" style="flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:8px">
+            <button class="primary" type="submit">発行</button>
+        </form>
+    </div>
+
+    <table>
+        <thead><tr><th>ラベル</th><th>状態</th><th>最終使用</th><th>発行日</th><th></th></tr></thead>
+        <tbody>
+        <?php if (!$tokens): ?>
+            <tr><td colspan="5" class="muted" style="text-align:center;padding:20px">まだトークンはありません。</td></tr>
+        <?php endif; ?>
+        <?php foreach ($tokens as $t): ?>
+            <tr>
+                <td><?= h($t['label']) ?></td>
+                <td><?= ((int) $t['revoked'] === 1) ? '<span class="pill deprecated">失効</span>' : '<span class="pill active">有効</span>' ?></td>
+                <td class="muted"><?= h($t['last_used_at'] ?? '—') ?></td>
+                <td class="muted"><?= h($t['created_at']) ?></td>
+                <td>
+                    <?php if ((int) $t['revoked'] === 0): ?>
+                        <form method="post" onsubmit="return confirm('このトークンを失効しますか？')">
+                            <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+                            <input type="hidden" name="action" value="revoke_token">
+                            <input type="hidden" name="token_id" value="<?= (int) $t['id'] ?>">
+                            <button class="link danger" type="submit">失効</button>
+                        </form>
+                    <?php endif; ?>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+</div></body></html>
+    <?php
+}
+
+/** サーバ内スキャン画面（admin 以上） */
+function render_scan_page(array $user, array $group, int $gid): void
+{
+    $flashMsg = take_flash();
+    $csrf = csrf_token();
+    $targets = list_scan_targets($gid);
+    $guess = realpath(__DIR__ . '/../') ?: dirname(__DIR__);
+    $zipOk = class_exists('ZipArchive');
+    ?>
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><?= h(APP_NAME) ?> — スキャン</title>
+<?php render_styles(); ?>
+</head><body>
+<header class="app">
+    <h1>🛡️ <?= h(APP_NAME) ?></h1><span class="tag">スキャン — <?= h($group['name']) ?></span>
+    <span class="spacer"></span>
+    <a class="navlink" href="index.php">← ダッシュボードへ</a>
+    <a class="navlink" href="<?= h(app_url('logout')) ?>">ログアウト</a>
+</header>
+<div class="wrap" style="max-width:780px">
+    <?php if ($flashMsg): ?><div class="flash <?= h($flashMsg[0]) ?>"><?= h($flashMsg[1]) ?></div><?php endif; ?>
+
+    <p class="hint" style="margin-top:0">ソースを走査して外部APIの使用箇所を自動検出し、<strong><?= h($group['name']) ?></strong> のカタログに反映します。
+    手動入力したコスト・メモ・status は<strong>上書きされません</strong>。キー本体らしき値は保存前に伏字化します。
+    <code>node_modules</code>/<code>vendor</code>/<code>.git</code> 等は自動除外。</p>
+
+    <!-- ① 保存済みスキャン対象（ワンクリック） -->
+    <div class="stat" style="width:100%;margin-bottom:14px">
+        <div class="row" style="display:flex;justify-content:space-between;align-items:center">
+            <h2 style="margin:0;font-size:16px">① 保存したフォルダをスキャン（heteml内・ワンクリック）</h2>
+            <?php if (count($targets) > 1): ?>
+                <form method="post" style="margin:0">
+                    <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+                    <input type="hidden" name="action" value="run_all">
+                    <button class="primary" type="submit">すべてスキャン</button>
+                </form>
+            <?php endif; ?>
+        </div>
+        <?php if (!$targets): ?>
+            <p class="hint" style="margin:8px 0 0">まだ登録がありません。下の②で対象フォルダを保存すると、ここにワンクリックボタンが並びます。</p>
+        <?php else: ?>
+            <table style="margin-top:10px">
+                <thead><tr><th>ラベル</th><th>パス</th><th>最終スキャン</th><th></th></tr></thead>
+                <tbody>
+                <?php foreach ($targets as $t): ?>
+                    <tr>
+                        <td><strong><?= h($t['label']) ?></strong></td>
+                        <td class="muted" style="word-break:break-all"><code><?= h($t['path']) ?></code></td>
+                        <td class="muted"><?= h($t['last_scanned_at'] ?? '—') ?></td>
+                        <td style="white-space:nowrap">
+                            <form method="post" style="display:inline">
+                                <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+                                <input type="hidden" name="action" value="run_target">
+                                <input type="hidden" name="target_id" value="<?= (int) $t['id'] ?>">
+                                <button class="primary" type="submit">スキャン</button>
+                            </form>
+                            <form method="post" style="display:inline" onsubmit="return confirm('「<?= h($t['label']) ?>」を削除しますか？')">
+                                <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+                                <input type="hidden" name="action" value="delete_target">
+                                <input type="hidden" name="target_id" value="<?= (int) $t['id'] ?>">
+                                <button class="link danger" type="submit">削除</button>
+                            </form>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php endif; ?>
+    </div>
+
+    <!-- ② スキャン対象フォルダを保存 -->
+    <div class="stat" style="width:100%;margin-bottom:14px">
+        <h2 style="margin:0 0 10px;font-size:16px">② スキャン対象フォルダを保存（最初の1回だけ）</h2>
+        <form method="post">
+            <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+            <input type="hidden" name="action" value="add_target">
+            <div class="field" style="margin-bottom:8px">
+                <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">サーバ上の絶対パス</label>
+                <input name="path" required value="<?= h($guess) ?>" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px">
+                <div class="hint">あなたのサイトのドキュメントルート。上は推測値です。実際のパスに直してください。</div>
+            </div>
+            <div class="field" style="margin-bottom:10px">
+                <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">ラベル（任意）</label>
+                <input name="label" placeholder="例: mysite" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px">
+            </div>
+            <button class="primary" type="submit">対象として保存</button>
+            <button class="" type="submit" formaction="<?= h(app_url('scan')) ?>" name="action" value="run_path" style="margin-left:6px">保存せず今すぐ1回だけスキャン</button>
+        </form>
+    </div>
+
+    <!-- ③ ZIPアップロード（PC/Gドライブのコード） -->
+    <div class="stat" style="width:100%">
+        <h2 style="margin:0 0 8px;font-size:16px">③ ZIPをアップロードしてスキャン（PC・Gドライブのコード用）</h2>
+        <p class="hint" style="margin:0 0 10px">heteml の外（手元PCやGドライブ）にある Python 等のコードは、フォルダをZIPにしてここからアップロードするとスキャンできます。SSH・トークン不要。</p>
+        <?php if (!$zipOk): ?>
+            <div class="flash err" style="margin:0">このサーバでは ZIP 展開機能(ZipArchive)が無効のため利用できません。CLI/Pythonスキャナをご利用ください。</div>
+        <?php else: ?>
+            <form method="post" enctype="multipart/form-data">
+                <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+                <input type="hidden" name="action" value="upload_scan">
+                <div class="field" style="margin-bottom:8px">
+                    <input type="file" name="zipfile" accept=".zip" required style="width:100%">
+                </div>
+                <div class="field" style="margin-bottom:10px">
+                    <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">repo ラベル（任意・既定はZIP名）</label>
+                    <input name="repo" placeholder="例: gdrive-scripts" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px">
+                </div>
+                <button class="primary" type="submit">アップロードしてスキャン</button>
+                <span class="hint">展開上限 80MB。アップロードしたZIPは展開・解析後すぐ削除されます。</span>
+            </form>
+        <?php endif; ?>
+    </div>
+
+    <p class="hint" style="margin-top:14px">⚠ 自分が管理するコードのみをスキャンしてください。</p>
+</div></body></html>
+    <?php
+}
 ?>
 <!DOCTYPE html>
 <html lang="ja">
@@ -418,6 +710,8 @@ function render_login_page(): void
         <span class="tag"><?= h($group['name']) ?></span>
     <?php endif; ?>
     <span class="role-badge"><?= h(ROLES[$role] ?? $role) ?></span>
+    <?php if (can_manage()): ?><a class="navlink" href="<?= h(app_url('scan')) ?>">スキャン</a><?php endif; ?>
+    <a class="navlink" href="<?= h(app_url('tokens')) ?>">トークン</a>
     <a class="navlink" href="groups.php">グループ管理</a>
     <span class="who">
         <?php if ($user['avatar_url']): ?><img src="<?= h($user['avatar_url']) ?>" alt=""><?php endif; ?>
