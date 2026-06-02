@@ -99,6 +99,61 @@ $gid   = current_group_id();      // 所属グループ先頭に補正済み
 $group = current_group();
 $role  = current_role();
 
+/* ================================================================== *
+ *  個人用トークン画面（CLI push 用トークンの発行・失効）
+ * ================================================================== */
+if ($route === 'tokens') {
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        check_csrf();
+        $a = $_POST['action'] ?? '';
+        if ($a === 'create_token') {
+            $label = trim((string) ($_POST['label'] ?? '')) ?: 'token';
+            $_SESSION['new_token'] = issue_api_token((int) $user['id'], $label);
+            flash('ok', '個人用トークンを発行しました。表示は一度だけです。今すぐコピーしてください。');
+        } elseif ($a === 'revoke_token') {
+            revoke_api_token((int) $user['id'], (int) ($_POST['token_id'] ?? 0));
+            flash('ok', 'トークンを失効しました。');
+        }
+        redirect(app_url('tokens'));
+    }
+    render_tokens_page($user);
+    exit;
+}
+
+/* ================================================================== *
+ *  サーバ内スキャン画面（heteml 上のファイルを直接走査・admin 以上）
+ * ================================================================== */
+if ($route === 'scan') {
+    require_role_at_least($gid, 'admin');
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        check_csrf();
+        require_once __DIR__ . '/lib/scanner.php';
+        $path = trim((string) ($_POST['path'] ?? ''));
+        $repo = trim((string) ($_POST['repo'] ?? '')) ?: basename(rtrim($path, '/\\'));
+        $real = $path !== '' ? realpath($path) : false;
+        $allowedRoot = config('SCAN_ALLOWED_ROOT');
+
+        if ($real === false || !is_dir($real)) {
+            flash('err', 'ディレクトリが見つかりません: ' . $path);
+        } elseif ($allowedRoot && strncmp($real, (string) realpath((string) $allowedRoot), strlen((string) realpath((string) $allowedRoot))) !== 0) {
+            flash('err', 'そのパスはスキャン許可ディレクトリ(SCAN_ALLOWED_ROOT)の外です。');
+        } else {
+            try {
+                $providers = load_providers(__DIR__ . '/scanner/providers.json');
+                $found = scan_directory($real, $providers, ['repo' => $repo]);
+                $res = merge_scan_results($gid, $found);
+                flash('ok', sprintf('スキャン完了: 新規 %d 件 / 更新 %d 件 / 使用箇所 %d 件を反映しました（手動入力のコスト等は保持）。',
+                    $res['created'], $res['updated'], $res['usages']));
+            } catch (Throwable $e) {
+                flash('err', 'スキャンに失敗しました: ' . $e->getMessage());
+            }
+        }
+        redirect(app_url('scan'));
+    }
+    render_scan_page($user, $group);
+    exit;
+}
+
 /* ------------------------------------------------------------------ *
  *  POST 処理（カタログ編集）— すべてサーバ側で権限チェック
  * ------------------------------------------------------------------ */
@@ -391,6 +446,139 @@ function render_login_page(): void
 </div></body></html>
     <?php
 }
+
+/** 個人用トークン画面 */
+function render_tokens_page(array $user): void
+{
+    $tokens   = list_api_tokens((int) $user['id']);
+    $newToken = $_SESSION['new_token'] ?? null;
+    unset($_SESSION['new_token']);
+    $flashMsg = take_flash();
+    $csrf     = csrf_token();
+    $endpoint = app_base_url() . '/api.php';
+    ?>
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><?= h(APP_NAME) ?> — 個人用トークン</title>
+<?php render_styles(); ?>
+</head><body>
+<header class="app">
+    <h1>🛡️ <?= h(APP_NAME) ?></h1><span class="tag">個人用トークン</span>
+    <span class="spacer"></span>
+    <a class="navlink" href="index.php">← ダッシュボードへ</a>
+    <a class="navlink" href="<?= h(app_url('logout')) ?>">ログアウト</a>
+</header>
+<div class="wrap" style="max-width:760px">
+    <?php if ($flashMsg): ?><div class="flash <?= h($flashMsg[0]) ?>"><?= h($flashMsg[1]) ?></div><?php endif; ?>
+
+    <?php if ($newToken): ?>
+        <div class="stat" style="background:#fffbe6;border-color:#facc15;width:100%">
+            <div class="label">発行されたトークン（この表示は一度きり）</div>
+            <code style="font-size:14px;display:block;margin:6px 0;word-break:break-all"><?= h($newToken) ?></code>
+            <div class="hint">CLI では環境変数 <code>APICATALOG_TOKEN</code> に設定して使います。</div>
+        </div>
+    <?php endif; ?>
+
+    <div class="stat" style="width:100%;margin-bottom:14px">
+        <h2 style="margin:0 0 8px;font-size:16px">スキャナCLI の使い方</h2>
+        <p class="hint" style="margin:0 0 8px">SSH やローカルPCで <code>scan.php</code> を実行し、検出結果をこのサイトへ送信します。コスト金額はコードからは取得しません（Web UIで手動入力）。再送信時も手動入力のコスト・メモ・status は保持されます。</p>
+        <code style="display:block;white-space:pre-wrap;font-size:12.5px">export APICATALOG_TOKEN="発行したトークン"
+php scan.php --path /path/to/site --push \
+  --endpoint <?= h($endpoint) ?> \
+  --group <?= h((string) (current_group_id() ?? '')) ?></code>
+    </div>
+
+    <div class="stat" style="width:100%;margin-bottom:14px">
+        <h2 style="margin:0 0 10px;font-size:16px">新しいトークンを発行</h2>
+        <form method="post" class="row" style="display:flex;gap:8px">
+            <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+            <input type="hidden" name="action" value="create_token">
+            <input name="label" placeholder="用途ラベル（例: my-macbook）" style="flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:8px">
+            <button class="primary" type="submit">発行</button>
+        </form>
+    </div>
+
+    <table>
+        <thead><tr><th>ラベル</th><th>状態</th><th>最終使用</th><th>発行日</th><th></th></tr></thead>
+        <tbody>
+        <?php if (!$tokens): ?>
+            <tr><td colspan="5" class="muted" style="text-align:center;padding:20px">まだトークンはありません。</td></tr>
+        <?php endif; ?>
+        <?php foreach ($tokens as $t): ?>
+            <tr>
+                <td><?= h($t['label']) ?></td>
+                <td><?= ((int) $t['revoked'] === 1) ? '<span class="pill deprecated">失効</span>' : '<span class="pill active">有効</span>' ?></td>
+                <td class="muted"><?= h($t['last_used_at'] ?? '—') ?></td>
+                <td class="muted"><?= h($t['created_at']) ?></td>
+                <td>
+                    <?php if ((int) $t['revoked'] === 0): ?>
+                        <form method="post" onsubmit="return confirm('このトークンを失効しますか？')">
+                            <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+                            <input type="hidden" name="action" value="revoke_token">
+                            <input type="hidden" name="token_id" value="<?= (int) $t['id'] ?>">
+                            <button class="link danger" type="submit">失効</button>
+                        </form>
+                    <?php endif; ?>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+</div></body></html>
+    <?php
+}
+
+/** サーバ内スキャン画面（admin 以上） */
+function render_scan_page(array $user, array $group): void
+{
+    $flashMsg = take_flash();
+    $csrf = csrf_token();
+    $guess = realpath(__DIR__ . '/../') ?: dirname(__DIR__);
+    ?>
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><?= h(APP_NAME) ?> — サーバ内スキャン</title>
+<?php render_styles(); ?>
+</head><body>
+<header class="app">
+    <h1>🛡️ <?= h(APP_NAME) ?></h1><span class="tag">サーバ内スキャン — <?= h($group['name']) ?></span>
+    <span class="spacer"></span>
+    <a class="navlink" href="index.php">← ダッシュボードへ</a>
+    <a class="navlink" href="<?= h(app_url('logout')) ?>">ログアウト</a>
+</header>
+<div class="wrap" style="max-width:760px">
+    <?php if ($flashMsg): ?><div class="flash <?= h($flashMsg[0]) ?>"><?= h($flashMsg[1]) ?></div><?php endif; ?>
+
+    <div class="stat" style="width:100%;margin-bottom:14px">
+        <h2 style="margin:0 0 8px;font-size:16px">この heteml サーバ上のフォルダをスキャン</h2>
+        <p class="hint" style="margin:0">指定フォルダ配下のソースを走査し、外部APIの使用箇所を自動検出して
+        <strong><?= h($group['name']) ?></strong> のカタログに反映します。
+        <code>node_modules</code> / <code>vendor</code> / <code>.git</code> 等は自動除外。
+        手動入力したコスト・メモ・status は<strong>上書きされません</strong>。
+        スニペット内のキー本体らしき文字列は保存前に伏字化します。</p>
+    </div>
+
+    <form method="post" class="stat" style="width:100%">
+        <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+        <input type="hidden" name="action" value="run_scan">
+        <div class="field" style="margin-bottom:10px">
+            <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">スキャンするディレクトリ（サーバ上の絶対パス）</label>
+            <input name="path" required value="<?= h($guess) ?>" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px">
+            <div class="hint">例: あなたのサイトのドキュメントルート。上は推測値です。実際のパスに直してください。</div>
+        </div>
+        <div class="field" style="margin-bottom:12px">
+            <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">repo ラベル（使用箇所の表示名・任意）</label>
+            <input name="repo" placeholder="例: mysite" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px">
+        </div>
+        <button class="primary" type="submit">スキャン実行</button>
+    </form>
+
+    <p class="hint" style="margin-top:14px">⚠ 自分が管理するコードのみをスキャンしてください。大量のファイルがある場合は時間がかかることがあります。</p>
+</div></body></html>
+    <?php
+}
 ?>
 <!DOCTYPE html>
 <html lang="ja">
@@ -418,6 +606,8 @@ function render_login_page(): void
         <span class="tag"><?= h($group['name']) ?></span>
     <?php endif; ?>
     <span class="role-badge"><?= h(ROLES[$role] ?? $role) ?></span>
+    <?php if (can_manage()): ?><a class="navlink" href="<?= h(app_url('scan')) ?>">スキャン</a><?php endif; ?>
+    <a class="navlink" href="<?= h(app_url('tokens')) ?>">トークン</a>
     <a class="navlink" href="groups.php">グループ管理</a>
     <span class="who">
         <?php if ($user['avatar_url']): ?><img src="<?= h($user['avatar_url']) ?>" alt=""><?php endif; ?>

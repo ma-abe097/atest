@@ -1,0 +1,69 @@
+<?php
+declare(strict_types=1);
+
+/**
+ * Push API エンドポイント（スキャナCLI 用・仕様書 §6）。
+ * --------------------------------------------------------------------------
+ * POST /api.php?action=push&group=<group_id>
+ *   ヘッダ: Authorization: Bearer <個人用トークン>
+ *   ボディ: JSON { "apis": [ {name, provider, key_location, detected_by[], usages[]} ] }
+ *
+ * 認証は個人用トークン（Web UIの設定画面で発行）。トークン所有者がそのグループの
+ * member 以上であることをサーバ側で検証し、自動フィールドのみマージする。
+ */
+
+require __DIR__ . '/bootstrap.php';
+
+header('Content-Type: application/json; charset=utf-8');
+
+function json_out(int $code, array $payload): void
+{
+    http_response_code($code);
+    echo json_encode($payload, JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' || ($_GET['action'] ?? '') !== 'push') {
+    json_out(404, ['error' => 'not_found', 'hint' => 'POST /api.php?action=push&group=<id>']);
+}
+
+// Bearer トークン取得
+$auth = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+if ($auth === '' && function_exists('apache_request_headers')) {
+    $hdrs = apache_request_headers();
+    $auth = $hdrs['Authorization'] ?? ($hdrs['authorization'] ?? '');
+}
+if (!preg_match('/^Bearer\s+(.+)$/i', trim($auth), $m)) {
+    json_out(401, ['error' => 'missing_token', 'hint' => 'Authorization: Bearer <token>']);
+}
+$tokenUser = verify_api_token(trim($m[1]));
+if (!$tokenUser) {
+    json_out(401, ['error' => 'invalid_token']);
+}
+
+$gid = (int) ($_GET['group'] ?? 0);
+if ($gid <= 0) {
+    json_out(400, ['error' => 'missing_group']);
+}
+
+// トークン所有者がそのグループの member 以上か（サーバ側で必ずチェック）
+$roleStmt = db()->prepare('SELECT role FROM memberships WHERE group_id = :g AND user_id = :u');
+$roleStmt->execute([':g' => $gid, ':u' => $tokenUser['id']]);
+$role = $roleStmt->fetchColumn();
+if ($role === false || role_rank((string) $role) < ROLE_RANK['member']) {
+    json_out(403, ['error' => 'forbidden', 'hint' => 'このグループで member 以上の権限が必要です']);
+}
+
+$raw = file_get_contents('php://input');
+$body = json_decode((string) $raw, true);
+if (!is_array($body) || !isset($body['apis']) || !is_array($body['apis'])) {
+    json_out(400, ['error' => 'invalid_payload', 'hint' => '{ "apis": [ ... ] }']);
+}
+
+try {
+    $result = merge_scan_results($gid, $body['apis']);
+} catch (Throwable $e) {
+    json_out(500, ['error' => 'merge_failed', 'detail' => $e->getMessage()]);
+}
+
+json_out(200, ['ok' => true, 'group' => $gid] + $result);

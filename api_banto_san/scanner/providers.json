@@ -1,0 +1,85 @@
+{
+  "_comment": "外部APIプロバイダ定義（仕様書 §6）。sdk: インポート/require されるパッケージ名やクラス, host: コード中に現れるベースURLのホスト名, env: 環境変数名（完全一致 or 接頭辞）。追加しやすいよう外部ファイルに分離。",
+  "providers": [
+    {
+      "name": "OpenAI",
+      "default_api_name": "OpenAI API",
+      "docs_url": "https://platform.openai.com/docs",
+      "sdk":  ["openai", "OpenAI\\\\", "openai-php", "\\\\OpenAI"],
+      "host": ["api.openai.com"],
+      "env":  ["OPENAI_API_KEY", "OPENAI_API_BASE", "OPENAI_ORG"]
+    },
+    {
+      "name": "Stripe",
+      "default_api_name": "Stripe",
+      "docs_url": "https://stripe.com/docs/api",
+      "sdk":  ["stripe", "Stripe\\\\", "\\\\Stripe"],
+      "host": ["api.stripe.com"],
+      "env":  ["STRIPE_SECRET_KEY", "STRIPE_PUBLISHABLE_KEY", "STRIPE_API_KEY", "STRIPE_WEBHOOK_SECRET"]
+    },
+    {
+      "name": "Google Maps",
+      "default_api_name": "Google Maps Platform",
+      "docs_url": "https://developers.google.com/maps",
+      "sdk":  ["@googlemaps/", "googlemaps"],
+      "host": ["maps.googleapis.com", "maps.google.com"],
+      "env":  ["GOOGLE_MAPS_API_KEY", "GOOGLE_MAPS_KEY", "GMAPS_API_KEY"]
+    },
+    {
+      "name": "Google Cloud",
+      "default_api_name": "Google Cloud",
+      "docs_url": "https://cloud.google.com/apis",
+      "sdk":  ["googleapis", "@google-cloud/", "google/cloud", "Google\\\\Cloud"],
+      "host": ["googleapis.com"],
+      "env":  ["GOOGLE_APPLICATION_CREDENTIALS", "GCP_PROJECT", "GOOGLE_API_KEY"]
+    },
+    {
+      "name": "AWS",
+      "default_api_name": "AWS",
+      "docs_url": "https://docs.aws.amazon.com/",
+      "sdk":  ["@aws-sdk/", "aws-sdk", "Aws\\\\", "boto3"],
+      "host": ["amazonaws.com"],
+      "env":  ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"]
+    },
+    {
+      "name": "Anthropic",
+      "default_api_name": "Anthropic (Claude) API",
+      "docs_url": "https://docs.anthropic.com/",
+      "sdk":  ["anthropic", "@anthropic-ai/", "Anthropic\\\\"],
+      "host": ["api.anthropic.com"],
+      "env":  ["ANTHROPIC_API_KEY"]
+    },
+    {
+      "name": "SendGrid",
+      "default_api_name": "SendGrid",
+      "docs_url": "https://docs.sendgrid.com/",
+      "sdk":  ["@sendgrid/", "sendgrid", "SendGrid\\\\"],
+      "host": ["api.sendgrid.com"],
+      "env":  ["SENDGRID_API_KEY"]
+    },
+    {
+      "name": "Twilio",
+      "default_api_name": "Twilio",
+      "docs_url": "https://www.twilio.com/docs",
+      "sdk":  ["twilio", "Twilio\\\\"],
+      "host": ["api.twilio.com"],
+      "env":  ["TWILIO_AUTH_TOKEN", "TWILIO_ACCOUNT_SID"]
+    },
+    {
+      "name": "LINE",
+      "default_api_name": "LINE Messaging API",
+      "docs_url": "https://developers.line.biz/ja/docs/",
+      "sdk":  ["@line/bot-sdk", "linebot", "LINE\\\\"],
+      "host": ["api.line.me"],
+      "env":  ["LINE_CHANNEL_ACCESS_TOKEN", "LINE_CHANNEL_SECRET"]
+    },
+    {
+      "name": "Slack",
+      "default_api_name": "Slack API",
+      "docs_url": "https://api.slack.com/",
+      "sdk":  ["@slack/", "slack-sdk"],
+      "host": ["slack.com/api", "hooks.slack.com"],
+      "env":  ["SLACK_BOT_TOKEN", "SLACK_WEBHOOK_URL", "SLACK_SIGNING_SECRET"]
+    }
+  ]
+}
