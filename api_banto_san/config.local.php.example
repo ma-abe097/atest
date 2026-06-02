@@ -1,0 +1,36 @@
+<?php
+/**
+ * api_banto_san 設定ファイルのサンプル。
+ * --------------------------------------------------------------------------
+ * このファイルを config.local.php としてコピーし、値を埋めてください。
+ * config.local.php は .gitignore 済みで、リポジトリには含まれません。
+ *
+ * 設定は「環境変数 > config.local.php > 既定値」の優先順で読み込まれます。
+ * heteml 等では .htaccess の SetEnv か、この config.local.php で渡します。
+ *
+ * --- Google OAuth クライアントの作成手順（実装者が事前に行う） -------------
+ * 1. Google Cloud Console → 「APIとサービス」→「認証情報」
+ * 2. 「OAuth クライアント ID を作成」→ アプリの種類「ウェブアプリケーション」
+ * 3. 「承認済みのリダイレクト URI」に、下の GOOGLE_REDIRECT_URI と
+ *    完全に一致する URL を登録する。
+ * 4. 発行された クライアントID / クライアントシークレット をここに設定。
+ * 5. OAuth 同意画面でスコープ openid / email / profile を許可。
+ */
+
+return [
+    // 必須: Google OAuth クライアント
+    'GOOGLE_CLIENT_ID'     => '',
+    'GOOGLE_CLIENT_SECRET' => '',
+
+    // 必須: Google Console に登録したリダイレクト URI と完全一致させること。
+    // 例: https://your-domain.heteml.net/atest/api_banto_san/index.php?route=oauth2callback
+    'GOOGLE_REDIRECT_URI'  => '',
+
+    // 任意: アプリのベース URL（末尾スラッシュなし）。未指定ならリクエストから推定。
+    // 例: https://your-domain.heteml.net/atest/api_banto_san
+    'APP_BASE_URL'         => '',
+
+    // ローカル検証用の簡易ログイン。Google なしで動作確認するための機能。
+    // ★本番環境では必ず false（または未設定）にすること。
+    'APP_DEV_LOGIN'        => false,
+];

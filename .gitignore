@@ -11,7 +11,10 @@ webhook.log
 *.db
 *.sqlite
 *.sqlite3
- 
+
+# ローカル設定 (OAuthクライアント等の機微情報)
+config.local.php
+
 # OS固有のファイル
 .DS_Store
 Thumbs.db
