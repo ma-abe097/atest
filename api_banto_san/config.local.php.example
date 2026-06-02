@@ -35,6 +35,12 @@ return [
     // 例: 'sk-t.com'  /  'sk-t.com, example.co.jp'
     'ALLOWED_EMAIL_DOMAINS' => '',
 
+    // 任意: APIキー(値)を暗号化保存するためのマスター鍵（base64の32バイト）。
+    // 未設定だとキー保存機能は無効。次のコマンドで生成して貼り付ける:
+    //   php -r "echo base64_encode(random_bytes(32)).PHP_EOL;"
+    // ★この鍵を変更・紛失すると保存済みキーは復号できなくなります。大切に保管を。
+    'APP_ENCRYPTION_KEY'    => '',
+
     // ローカル検証用の簡易ログイン。Google なしで動作確認するための機能。
     // ★本番環境では必ず false（または未設定）にすること。
     'APP_DEV_LOGIN'        => false,
