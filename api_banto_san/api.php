@@ -23,11 +23,9 @@ function json_out(int $code, array $payload): void
     exit;
 }
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST' || ($_GET['action'] ?? '') !== 'push') {
-    json_out(404, ['error' => 'not_found', 'hint' => 'POST /api.php?action=push&group=<id>']);
-}
+$action = $_GET['action'] ?? '';
 
-// Bearer トークン取得
+// Bearer トークン取得（全アクション共通）
 $auth = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
 if ($auth === '' && function_exists('apache_request_headers')) {
     $hdrs = apache_request_headers();
@@ -41,6 +39,30 @@ if (!$tokenUser) {
     json_out(401, ['error' => 'invalid_token']);
 }
 
+/** トークン所有者の所属グループ（診断用） */
+function token_user_memberships(int $uid): array
+{
+    $st = db()->prepare(
+        'SELECT m.group_id, g.name, m.role FROM memberships m JOIN groups g ON g.id = m.group_id WHERE m.user_id = :u ORDER BY m.group_id'
+    );
+    $st->execute([':u' => $uid]);
+    return $st->fetchAll();
+}
+
+// 診断: このトークンが誰で、どのグループに何の権限で属しているかを返す
+if ($action === 'whoami') {
+    json_out(200, [
+        'ok'          => true,
+        'token_user'  => ['id' => (int) $tokenUser['id'], 'email' => $tokenUser['email'], 'name' => $tokenUser['name']],
+        'memberships' => token_user_memberships((int) $tokenUser['id']),
+        'hint'        => 'memberships に出ているグループ番号(group_id)を --group に使い、role が member 以上である必要があります。',
+    ]);
+}
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' || $action !== 'push') {
+    json_out(404, ['error' => 'not_found', 'hint' => 'POST /api.php?action=push&group=<id> または GET ?action=whoami']);
+}
+
 $gid = (int) ($_GET['group'] ?? 0);
 if ($gid <= 0) {
     json_out(400, ['error' => 'missing_group']);
@@ -51,7 +73,15 @@ $roleStmt = db()->prepare('SELECT role FROM memberships WHERE group_id = :g AND 
 $roleStmt->execute([':g' => $gid, ':u' => $tokenUser['id']]);
 $role = $roleStmt->fetchColumn();
 if ($role === false || role_rank((string) $role) < ROLE_RANK['member']) {
-    json_out(403, ['error' => 'forbidden', 'hint' => 'このグループで member 以上の権限が必要です']);
+    // 診断情報つきで返す（なぜ403かが分かるように）
+    json_out(403, [
+        'error'           => 'forbidden',
+        'hint'            => 'このグループで member 以上の権限が必要です。下の your_memberships のグループ番号を --group に指定してください。',
+        'token_user'      => ['id' => (int) $tokenUser['id'], 'email' => $tokenUser['email']],
+        'requested_group' => $gid,
+        'role_in_group'   => $role === false ? null : $role,
+        'your_memberships'=> token_user_memberships((int) $tokenUser['id']),
+    ]);
 }
 
 $raw = file_get_contents('php://input');
