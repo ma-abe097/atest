@@ -71,6 +71,10 @@ if ($route === 'devlogin') {
             flash('err', 'メールアドレスを入力してください。');
             redirect(app_url());
         }
+        if (!email_domain_allowed($email)) {
+            flash('err', '許可された社内ドメイン（' . implode(', ', allowed_email_domains()) . '）のアカウントのみ利用できます。');
+            redirect(app_url());
+        }
         login_with_profile('dev:' . strtolower($email), $email, $name, '');
         flash('ok', '（DEV）ログインしました。');
     }

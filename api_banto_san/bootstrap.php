@@ -68,6 +68,31 @@ function config_bool(string $key): bool
     return in_array(strtolower((string) $v), ['1', 'true', 'yes', 'on'], true);
 }
 
+/** 許可メールドメインの一覧（未設定なら空＝制限なし） */
+function allowed_email_domains(): array
+{
+    $raw = trim((string) config('ALLOWED_EMAIL_DOMAINS', ''));
+    if ($raw === '') {
+        return [];
+    }
+    $parts = preg_split('/[\s,]+/', strtolower($raw), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+    return array_map(static fn($d) => ltrim($d, '@'), $parts);
+}
+
+/** そのメールアドレスがログイン許可ドメインに属するか（未設定なら全許可） */
+function email_domain_allowed(string $email): bool
+{
+    $allowed = allowed_email_domains();
+    if (!$allowed) {
+        return true;
+    }
+    $at = strrpos($email, '@');
+    if ($at === false) {
+        return false;
+    }
+    return in_array(strtolower(substr($email, $at + 1)), $allowed, true);
+}
+
 /* ------------------------------------------------------------------ *
  *  セッション
  * ------------------------------------------------------------------ */
@@ -640,11 +665,17 @@ function google_handle_callback(): array
     if ($sub === '') {
         throw new RuntimeException('Google の安定ID(sub)が取得できませんでした。');
     }
+    $email = (string) ($info['email'] ?? '');
+
+    // 社内ドメイン制限（設定時）。許可ドメイン以外はログインさせない。
+    if (!email_domain_allowed($email)) {
+        throw new RuntimeException('このアプリは許可された社内ドメイン（' . implode(', ', allowed_email_domains()) . '）のアカウントのみ利用できます。');
+    }
 
     // 取得・保存するのは最小限（仕様書 §3）
     return login_with_profile(
         $sub,
-        (string) ($info['email'] ?? ''),
+        $email,
         (string) ($info['name'] ?? ''),
         (string) ($info['picture'] ?? '')
     );

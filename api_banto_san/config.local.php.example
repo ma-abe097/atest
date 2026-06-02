@@ -30,6 +30,11 @@ return [
     // 例: https://your-domain.heteml.net/atest/api_banto_san
     'APP_BASE_URL'         => '',
 
+    // 任意: ログインを許可するメールドメイン（社内のみに制限する場合）。
+    // カンマ区切りで複数可。空なら制限なし（誰でもGoogleログイン可）。
+    // 例: 'sk-t.com'  /  'sk-t.com, example.co.jp'
+    'ALLOWED_EMAIL_DOMAINS' => '',
+
     // ローカル検証用の簡易ログイン。Google なしで動作確認するための機能。
     // ★本番環境では必ず false（または未設定）にすること。
     'APP_DEV_LOGIN'        => false,
