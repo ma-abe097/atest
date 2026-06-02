@@ -278,7 +278,16 @@ function db(): PDO
         )
     SQL);
 
-    // 保存済みスキャン対象（option 1: ワンクリック再スキャン用）
+    // 手動並び順（API名ごとの表示順）
+    $pdo->exec(<<<SQL
+        CREATE TABLE IF NOT EXISTS catalog_pref (
+            group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+            name     TEXT    NOT NULL,
+            position INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (group_id, name)
+        )
+    SQL);
+
     $pdo->exec(<<<SQL
         CREATE TABLE IF NOT EXISTS scan_targets (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -830,6 +839,56 @@ function delete_siteless_apis(int $gid): int
     $stmt = db()->prepare("DELETE FROM apis WHERE group_id = :g AND IFNULL(site,'') = ''");
     $stmt->execute([':g' => $gid]);
     return $stmt->rowCount();
+}
+
+/* ------------------------------------------------------------------ *
+ *  手動並び順（API名ごと）
+ * ------------------------------------------------------------------ */
+/** name => position の連想配列 */
+function group_positions(int $gid): array
+{
+    $st = db()->prepare('SELECT name, position FROM catalog_pref WHERE group_id = :g');
+    $st->execute([':g' => $gid]);
+    $out = [];
+    foreach ($st->fetchAll() as $r) { $out[$r['name']] = (int) $r['position']; }
+    return $out;
+}
+
+/** 手動順での現在のグループ名リスト（position昇順→コスト降順） */
+function ordered_group_names(int $gid): array
+{
+    $st = db()->prepare('SELECT name, SUM(IFNULL(monthly_cost,0)) AS tot FROM apis WHERE group_id = :g GROUP BY name');
+    $st->execute([':g' => $gid]);
+    $rows = $st->fetchAll();
+    $pos = group_positions($gid);
+    usort($rows, static function ($a, $b) use ($pos) {
+        $pa = $pos[$a['name']] ?? PHP_INT_MAX;
+        $pb = $pos[$b['name']] ?? PHP_INT_MAX;
+        if ($pa !== $pb) { return $pa <=> $pb; }
+        return ((float) $b['tot'] <=> (float) $a['tot']) ?: strcmp($a['name'], $b['name']);
+    });
+    return array_map(static fn($r) => $r['name'], $rows);
+}
+
+function set_group_position(int $gid, string $name, int $pos): void
+{
+    db()->prepare(
+        'INSERT INTO catalog_pref (group_id, name, position) VALUES (:g,:n,:p)
+         ON CONFLICT(group_id, name) DO UPDATE SET position = :p'
+    )->execute([':g' => $gid, ':n' => $name, ':p' => $pos]);
+}
+
+/**
+ * 現在の表示順（$orderedNames）を 1..N で確定保存し、$name を上(up)/下(down)へ1つ移動。
+ */
+function move_group(int $gid, array $orderedNames, string $name, string $dir): void
+{
+    $idx = array_search($name, $orderedNames, true);
+    if ($idx === false) { return; }
+    $swap = $dir === 'up' ? $idx - 1 : $idx + 1;
+    if ($swap < 0 || $swap >= count($orderedNames)) { return; }
+    [$orderedNames[$idx], $orderedNames[$swap]] = [$orderedNames[$swap], $orderedNames[$idx]];
+    foreach ($orderedNames as $i => $n) { set_group_position($gid, $n, $i + 1); }
 }
 
 /* ------------------------------------------------------------------ *

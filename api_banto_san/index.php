@@ -265,6 +265,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect_self();
     }
 
+    if ($action === 'reorder') {
+        require_role_at_least($gid, 'member');
+        $name = (string) ($_POST['name'] ?? '');
+        $dir  = ($_POST['dir'] ?? '') === 'down' ? 'down' : 'up';
+        if ($name !== '') {
+            move_group($gid, ordered_group_names($gid), $name, $dir);
+        }
+        redirect(app_url());   // 手動順（既定）で反映
+    }
+
     if ($action === 'delete_legacy') {
         require_role_at_least($gid, 'admin');
         $n = delete_siteless_apis($gid);
@@ -320,7 +330,8 @@ $q            = trim((string) ($_GET['q'] ?? ''));
 $filterProv   = trim((string) ($_GET['provider'] ?? ''));
 $filterStatus = trim((string) ($_GET['status'] ?? ''));
 $filterSite   = trim((string) ($_GET['site'] ?? ''));
-$sort         = (($_GET['sort'] ?? 'cost') === 'name') ? 'name' : 'cost';
+$sort         = (string) ($_GET['sort'] ?? 'manual');
+if (!in_array($sort, ['manual', 'cost', 'name'], true)) { $sort = 'manual'; }
 
 $where  = ['a.group_id = :gid'];
 $params = [':gid' => $gid];
@@ -364,8 +375,16 @@ foreach ($groups as $gname => $rows) {
 }
 if ($sort === 'name') {
     uksort($groups, static fn($a, $b) => strcasecmp($a, $b));
-} else {
+} elseif ($sort === 'cost') {
     uksort($groups, static fn($a, $b) => ($groupTotal[$b] <=> $groupTotal[$a]) ?: strcmp($a, $b));
+} else { // manual: 手動順（未設定はコスト降順で後ろ）
+    $positions = group_positions($gid);
+    uksort($groups, static function ($a, $b) use ($positions, $groupTotal) {
+        $pa = $positions[$a] ?? PHP_INT_MAX;
+        $pb = $positions[$b] ?? PHP_INT_MAX;
+        if ($pa !== $pb) { return $pa <=> $pb; }
+        return ($groupTotal[$b] <=> $groupTotal[$a]) ?: strcmp($a, $b);
+    });
 }
 
 // サイト一覧（フィルタ用）/ 旧形式(サイト未設定)件数
@@ -848,6 +867,7 @@ function render_scan_page(array $user, array $group, int $gid): void
             <?php endforeach; ?>
         </select>
         <select name="sort" onchange="this.form.submit()">
+            <option value="manual" <?= $sort === 'manual' ? 'selected' : '' ?>>手動の並び順</option>
             <option value="cost" <?= $sort === 'cost' ? 'selected' : '' ?>>金額順</option>
             <option value="name" <?= $sort === 'name' ? 'selected' : '' ?>>プロバイダ名順</option>
         </select>
@@ -904,7 +924,24 @@ function render_scan_page(array $user, array $group, int $gid): void
                     <span class="muted" style="font-weight:400">／ <?= count($rows) ?> サイト</span>
                 </td>
                 <td class="cost group-cost"><?= h($totalStr) ?></td>
-                <td colspan="<?= $restcol ?>"></td>
+                <td colspan="<?= $restcol ?>" style="text-align:right;white-space:nowrap">
+                    <?php if ($editable): ?>
+                        <form method="post" style="display:inline" onclick="event.stopPropagation()">
+                            <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+                            <input type="hidden" name="action" value="reorder">
+                            <input type="hidden" name="name" value="<?= h($gname) ?>">
+                            <input type="hidden" name="dir" value="up">
+                            <button class="link" type="submit" title="上へ">▲</button>
+                        </form>
+                        <form method="post" style="display:inline" onclick="event.stopPropagation()">
+                            <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+                            <input type="hidden" name="action" value="reorder">
+                            <input type="hidden" name="name" value="<?= h($gname) ?>">
+                            <input type="hidden" name="dir" value="down">
+                            <button class="link" type="submit" title="下へ">▼</button>
+                        </form>
+                    <?php endif; ?>
+                </td>
             </tr>
         <?php foreach ($rows as $a):
             $aid = (int) $a['id'];
