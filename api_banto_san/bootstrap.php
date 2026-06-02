@@ -390,9 +390,64 @@ function secret_hint(string $plain): string
 }
 
 /* ------------------------------------------------------------------ *
- *  認証（セッション内のユーザー）
+ *  コスト自動取得コネクタ（プラグイン式）。今は OpenAI に対応。
  * ------------------------------------------------------------------ */
-function current_user(): ?array
+/** そのプロバイダのコスト自動取得に対応しているか */
+function cost_supported(string $provider): bool
+{
+    return in_array(strtolower(trim($provider)), ['openai'], true);
+}
+
+/**
+ * エントリのコストを取得して ['amount'=>float,'currency'=>string] を返す。
+ * 失敗時は分かりやすいメッセージで例外を投げる。
+ */
+function fetch_cost_for(array $api): array
+{
+    $provider = strtolower(trim((string) ($api['provider'] ?? '')));
+    $key = decrypt_secret($api['secret_enc'] ?? null);
+    if ($key === null) {
+        if (!encryption_ready()) {
+            throw new RuntimeException('暗号鍵(APP_ENCRYPTION_KEY)が未設定のため、保存キーを復号できません。');
+        }
+        throw new RuntimeException('このエントリにAPIキー(値)が保存されていません。編集画面でキーを保存してください。');
+    }
+    switch ($provider) {
+        case 'openai': return cost_openai($key);
+        default: throw new RuntimeException('このプロバイダのコスト自動取得には未対応です（現在 OpenAI のみ）。');
+    }
+}
+
+/** OpenAI 当月コスト合計（Admin キーが必要）。Costs API を使用 */
+function cost_openai(string $key): array
+{
+    $start = strtotime(gmdate('Y-m-01 00:00:00') . ' UTC');
+    $url = 'https://api.openai.com/v1/organization/costs?start_time=' . $start . '&bucket_width=1d&limit=62';
+    $r = http_request('GET', $url, ['headers' => ['Authorization: Bearer ' . $key]]);
+
+    if ($r['status'] === 401 || $r['status'] === 403) {
+        throw new RuntimeException('OpenAIのコスト取得には組織の Admin キー(sk-admin-...) が必要です。通常のAPIキーでは取得できません（OpenAIの組織設定で発行してください）。');
+    }
+    if ($r['status'] !== 200) {
+        throw new RuntimeException('OpenAI コストAPIエラー (HTTP ' . $r['status'] . ')。' . ($r['error'] ?? ''));
+    }
+    $d = json_decode($r['body'], true);
+    $sum = 0.0;
+    $cur = 'USD';
+    foreach (($d['data'] ?? []) as $bucket) {
+        foreach (($bucket['results'] ?? []) as $res) {
+            $sum += (float) ($res['amount']['value'] ?? 0);
+            if (!empty($res['amount']['currency'])) {
+                $cur = strtoupper((string) $res['amount']['currency']);
+            }
+        }
+    }
+    return ['amount' => round($sum, 2), 'currency' => $cur];
+}
+
+/* ------------------------------------------------------------------ *
+ *  認証（セッション内のユーザー）
+ * ------------------------------------------------------------------ */function current_user(): ?array
 {
     static $cached = false, $user = null;
     if ($cached) {

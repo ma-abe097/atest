@@ -324,6 +324,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(app_url());
     }
 
+    if ($action === 'fetch_cost') {
+        require_role_at_least($gid, 'member');
+        $id = (int) ($_POST['id'] ?? 0);
+        $st = $pdo->prepare('SELECT * FROM apis WHERE id=:id AND group_id=:gid');
+        $st->execute([':id'=>$id, ':gid'=>$gid]);
+        $row = $st->fetch();
+        if (!$row) {
+            flash('err', '対象が見つかりません。');
+        } else {
+            try {
+                $c = fetch_cost_for($row);
+                $pdo->prepare('UPDATE apis SET monthly_cost=:m, currency=:c, updated_at=:u WHERE id=:id AND group_id=:gid')
+                    ->execute([':m'=>$c['amount'], ':c'=>$c['currency'], ':u'=>now(), ':id'=>$id, ':gid'=>$gid]);
+                flash('ok', sprintf('コストを取得しました（%s）: %s %s', h($row['name']), $c['currency'], number_format($c['amount'], 2)));
+            } catch (Throwable $e) {
+                flash('err', 'コスト取得に失敗: ' . $e->getMessage());
+            }
+        }
+        redirect_self();
+    }
+
     if ($action === 'delete_legacy') {
         require_role_at_least($gid, 'admin');
         $n = delete_siteless_apis($gid);
@@ -1066,6 +1087,14 @@ function render_scan_page(array $user, array $group, int $gid): void
                     <?php $aEdit = $a; unset($aEdit['secret_enc'], $aEdit['secret_fp']); ?>
                     <button class="link" type="button"
                         onclick='openEdit(<?= json_encode($aEdit, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
+                    <?php if (cost_supported($a['provider']) && !empty($a['secret_hint'])): ?>
+                    <form method="post" style="display:inline" title="保存したキーでコストを取得して月額を更新">
+                        <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+                        <input type="hidden" name="action" value="fetch_cost">
+                        <input type="hidden" name="id" value="<?= $aid ?>">
+                        <button class="link" type="submit">⟳コスト</button>
+                    </form>
+                    <?php endif; ?>
                     <form method="post" style="display:inline" onsubmit="return confirm('「<?= h($a['name']) ?>（<?= h($a['site'] ?: 'サイト未設定') ?>）」を削除しますか？')">
                         <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
                         <input type="hidden" name="action" value="delete_api">
