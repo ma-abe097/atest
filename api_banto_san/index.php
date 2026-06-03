@@ -667,13 +667,31 @@ function is_key_def_usage(array $u): bool
 function render_styles(): void { ?>
 <style>
     :root {
-        --bg:#f5f6f8; --card:#fff; --line:#e3e6ea; --ink:#1f2733;
-        --muted:#8a93a0; --accent:#2563eb; --accent-d:#1d4ed8;
+        --bg:#eef1f6; --card:#fff; --line:#e8ebf0; --ink:#1f2733;
+        --muted:#8a93a0; --accent:#2f6bff; --accent-d:#1d4ed8;
         --ok-bg:#e7f6ec; --ok-ink:#1a7f43; --err-bg:#fdecec; --err-ink:#b42318;
+        --radius:16px; --shadow:0 6px 24px rgba(31,41,55,.06);
     }
     * { box-sizing:border-box; }
     body { margin:0; background:var(--bg); color:var(--ink);
         font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP",Meiryo,sans-serif; line-height:1.6; }
+
+    /* ===== モダン・サイドバー レイアウト（ダッシュボード用） ===== */
+    .layout { display:flex; min-height:100vh; }
+    .sidebar { width:218px; flex:0 0 218px; background:#fff; border-right:1px solid var(--line); padding:18px 14px; position:sticky; top:0; height:100vh; overflow:auto; }
+    .sidebar .brand { display:flex; align-items:center; gap:8px; font-weight:800; font-size:17px; padding:6px 8px 16px; }
+    .sidebar .navlabel { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; padding:14px 10px 6px; }
+    .sidebar a.nav { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:12px; color:#46505e; text-decoration:none; font-size:14px; font-weight:600; margin-bottom:2px; }
+    .sidebar a.nav:hover { background:#f3f5f9; color:var(--ink); }
+    .sidebar a.nav.active { background:var(--accent); color:#fff; box-shadow:0 6px 16px rgba(47,107,255,.35); }
+    .sidebar .who { display:flex; align-items:center; gap:8px; font-size:13px; padding:10px 8px; border-top:1px solid var(--line); margin-top:14px; }
+    .sidebar .who img { width:30px; height:30px; border-radius:50%; }
+    .main { flex:1; min-width:0; padding:22px 26px; }
+    .topbar { display:flex; align-items:center; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
+    .topbar .grow { flex:1; }
+    .topbar select { padding:8px 12px; border-radius:12px; border:1px solid var(--line); background:#fff; font-size:13px; box-shadow:var(--shadow); }
+    .topbar h2 { margin:0; font-size:20px; }
+
     header.app { background:#0f172a; color:#fff; padding:12px 20px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
     header.app h1 { font-size:18px; margin:0; font-weight:700; }
     header.app .tag { font-size:12px; color:#94a3b8; }
@@ -684,30 +702,30 @@ function render_styles(): void { ?>
     header.app a.navlink { color:#cbd5e1; text-decoration:none; font-size:13px; padding:4px 8px; border-radius:7px; }
     header.app a.navlink:hover { background:#1e293b; color:#fff; }
     .wrap { max-width:1080px; margin:0 auto; padding:20px; }
-    .role-badge { font-size:11px; padding:2px 8px; border-radius:999px; background:#1e293b; color:#cbd5e1; }
-    .summary { display:flex; flex-wrap:wrap; gap:12px; margin-bottom:18px; }
-    .stat { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 16px; min-width:150px; }
+    .role-badge { font-size:11px; padding:3px 10px; border-radius:999px; background:#eef2ff; color:#3730a3; font-weight:700; }
+    .summary { display:flex; flex-wrap:wrap; gap:14px; margin-bottom:20px; }
+    .stat { background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:16px 18px; min-width:150px; box-shadow:var(--shadow); }
     .stat .label { font-size:12px; color:var(--muted); }
-    .stat .value { font-size:22px; font-weight:700; }
+    .stat .value { font-size:24px; font-weight:800; }
     .stat .value small { font-size:12px; font-weight:400; color:var(--muted); }
     .toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; background:var(--card);
-        border:1px solid var(--line); border-radius:12px; padding:12px; margin-bottom:14px; }
-    .toolbar input, .toolbar select { padding:7px 10px; border:1px solid var(--line); border-radius:8px; font-size:14px; }
+        border:1px solid var(--line); border-radius:var(--radius); padding:12px; margin-bottom:14px; box-shadow:var(--shadow); }
+    .toolbar input, .toolbar select { padding:8px 12px; border:1px solid var(--line); border-radius:10px; font-size:14px; }
     .toolbar .spacer { flex:1; }
-    button, .btn { font-size:14px; padding:7px 14px; border-radius:8px; border:1px solid var(--line);
+    button, .btn { font-size:14px; padding:8px 16px; border-radius:10px; border:1px solid var(--line);
         background:#fff; color:var(--ink); cursor:pointer; text-decoration:none; display:inline-block; }
     button.primary, .btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
     button.primary:hover { background:var(--accent-d); }
     button.danger { color:var(--err-ink); border-color:#f3c4c0; background:#fff; }
     button.link { border:none; background:none; color:var(--accent); padding:2px 4px; }
-    table { width:100%; border-collapse:collapse; background:var(--card); border-radius:12px; overflow:hidden; }
-    th, td { padding:10px 12px; text-align:left; border-bottom:1px solid var(--line); font-size:14px; vertical-align:top; }
-    th { background:#f0f2f5; font-size:12px; color:var(--muted); font-weight:600; }
-    td.cost { font-variant-numeric:tabular-nums; white-space:nowrap; font-weight:600; }
+    table { width:100%; border-collapse:collapse; background:var(--card); border-radius:var(--radius); overflow:hidden; }
+    th, td { padding:11px 14px; text-align:left; font-size:14px; vertical-align:top; border-bottom:1px solid var(--line); }
+    th { background:#f7f9fc; font-size:12px; color:var(--muted); font-weight:700; }
+    td.cost { font-variant-numeric:tabular-nums; white-space:nowrap; font-weight:700; }
     tr.api-row:hover { background:#fafbfc; }
     tr.group-head { cursor:pointer; }
-    tr.group-head td { background:#eef2ff; color:#1e293b; border-top:2px solid #c7d2fe; }
-    tr.group-head:hover td { background:#e0e7ff; }
+    tr.group-head td { background:#f4f7ff; color:#1e293b; }
+    tr.group-head:hover td { background:#e9efff; }
     tr.group-head strong { font-size:15px; }
     .caret { display:inline-block; width:1em; color:#475569; }
     .drag-handle { cursor:grab; color:#94a3b8; margin-right:4px; user-select:none; }
@@ -718,8 +736,8 @@ function render_styles(): void { ?>
     #abtToast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#0f172a; color:#fff;
         padding:9px 18px; border-radius:10px; font-size:13px; opacity:0; transition:opacity .2s; pointer-events:none; z-index:9999; }
     #abtToast.show { opacity:.95; }
-    td.group-cost { font-size:16px; font-weight:700; color:#0f172a; white-space:nowrap; }
-    .table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; border:1px solid var(--line); border-radius:12px; }
+    td.group-cost { font-size:16px; font-weight:800; color:#0f172a; white-space:nowrap; }
+    .table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); }
     .table-wrap table { border:none; border-radius:0; min-width:600px; }
     .muted { color:var(--muted); }
     .pill { display:inline-block; padding:2px 9px; border-radius:999px; font-size:12px; font-weight:600; }
@@ -729,9 +747,9 @@ function render_styles(): void { ?>
     .usages table { box-shadow:none; border:1px solid var(--line); margin:6px 0; }
     .usages td, .usages th { font-size:13px; padding:6px 10px; }
     code { background:#f0f2f5; padding:1px 5px; border-radius:5px; font-size:12.5px; word-break:break-all; }
-    .flash { padding:10px 14px; border-radius:10px; margin-bottom:14px; font-size:14px; }
+    .flash { padding:12px 16px; border-radius:12px; margin-bottom:14px; font-size:14px; }
     .flash.ok { background:var(--ok-bg); color:var(--ok-ink); } .flash.err { background:var(--err-bg); color:var(--err-ink); }
-    dialog { border:none; border-radius:14px; padding:0; width:min(620px,94vw); box-shadow:0 20px 60px rgba(0,0,0,.25); }
+    dialog { border:none; border-radius:var(--radius); padding:0; width:min(620px,94vw); box-shadow:0 20px 60px rgba(0,0,0,.25); }
     dialog::backdrop { background:rgba(15,23,42,.45); }
     .modal-head { padding:16px 20px; border-bottom:1px solid var(--line); font-weight:700; }
     .modal-body { padding:16px 20px; }
@@ -741,26 +759,25 @@ function render_styles(): void { ?>
     .field label { display:block; font-size:12px; color:var(--muted); margin-bottom:4px; }
     .field input, .field select, .field textarea { width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:8px; font-size:14px; font-family:inherit; }
     .hint { font-size:11.5px; color:var(--muted); margin-top:3px; }
-    .empty { text-align:center; color:var(--muted); padding:40px; }
+    .empty { text-align:center; color:var(--muted); padding:40px; background:#fff; border-radius:var(--radius); box-shadow:var(--shadow); }
     .note-cell { max-width:220px; }
     .login-box { max-width:420px; margin:8vh auto; background:var(--card); border:1px solid var(--line);
         border-radius:16px; padding:32px; text-align:center; box-shadow:0 10px 40px rgba(0,0,0,.06); }
     .gbtn { display:inline-flex; align-items:center; gap:10px; padding:11px 18px; border:1px solid var(--line);
         border-radius:10px; background:#fff; color:#1f2733; text-decoration:none; font-weight:600; font-size:15px; }
     .gbtn:hover { background:#f8fafc; }
-    @media (max-width:720px){
+    @media (max-width:820px){
+        .layout{flex-direction:column;}
+        .sidebar{width:auto;flex:none;height:auto;position:static;display:flex;flex-wrap:wrap;align-items:center;gap:6px;border-right:none;border-bottom:1px solid var(--line);}
+        .sidebar .brand{padding:6px 8px;} .sidebar .navlabel{display:none;}
+        .sidebar a.nav{margin:0;padding:8px 10px;} .sidebar .who{border-top:none;margin:0;}
+        .main{padding:14px;}
         .grid{grid-template-columns:1fr;}
         .hide-sm{display:none;}
-        .wrap{padding:12px;}
-        .summary{gap:8px;}
-        .summary .stat{min-width:0;flex:1 1 45%;padding:10px 12px;}
-        .summary .stat .value{font-size:18px;}
-        .toolbar{padding:10px;}
+        .summary .stat{min-width:0;flex:1 1 45%;padding:12px;}
+        .summary .stat .value{font-size:19px;}
         .toolbar input, .toolbar select{flex:1 1 100%;}
         .table-wrap table{min-width:520px;}
-        td.group-cost{font-size:15px;}
-        header.app{padding:10px 12px;gap:8px;}
-        header.app h1{font-size:16px;}
     }
 </style>
 <?php }
@@ -1044,34 +1061,40 @@ function render_scan_page(array $user, array $group, int $gid): void
 <?php render_styles(); ?>
 </head>
 <body>
-<header class="app">
-    <h1>🛡️ <?= h(APP_NAME) ?></h1>
-    <span class="tag">コスト軸ダッシュボード</span>
-    <span class="spacer"></span>
-    <!-- グループ切替 -->
-    <?php if (count($memberships) > 1): ?>
-        <select onchange="if(this.value)location.href=this.value">
-            <?php foreach ($memberships as $m): ?>
-                <option value="<?= h(app_url('switchgroup', ['gid' => (int) $m['id']])) ?>" <?= (int) $m['id'] === $gid ? 'selected' : '' ?>>
-                    <?= h($m['name']) ?>（<?= h(ROLES[$m['role']] ?? $m['role']) ?>）
-                </option>
-            <?php endforeach; ?>
-        </select>
-    <?php else: ?>
-        <span class="tag"><?= h($group['name']) ?></span>
-    <?php endif; ?>
-    <span class="role-badge"><?= h(ROLES[$role] ?? $role) ?></span>
-    <?php if (can_manage()): ?><a class="navlink" href="<?= h(app_url('scan')) ?>">スキャン</a><?php endif; ?>
-    <a class="navlink" href="<?= h(app_url('tokens')) ?>">トークン</a>
-    <a class="navlink" href="groups.php">グループ管理</a>
-    <span class="who">
+<div class="layout">
+<aside class="sidebar">
+    <div class="brand">🛡️ <?= h(APP_NAME) ?></div>
+    <div class="navlabel">メニュー</div>
+    <a class="nav active" href="index.php">📊 ダッシュボード</a>
+    <?php if (can_manage()): ?><a class="nav" href="<?= h(app_url('scan')) ?>">🔍 スキャン</a><?php endif; ?>
+    <a class="nav" href="<?= h(app_url('tokens')) ?>">🔑 トークン</a>
+    <a class="nav" href="groups.php">👥 グループ管理</a>
+    <div class="navlabel">アカウント</div>
+    <div class="who">
         <?php if ($user['avatar_url']): ?><img src="<?= h($user['avatar_url']) ?>" alt=""><?php endif; ?>
-        <?= h($user['name'] ?: $user['email']) ?>
-    </span>
-    <a class="navlink" href="<?= h(app_url('logout')) ?>">ログアウト</a>
-</header>
-
-<div class="wrap">
+        <div>
+            <div style="font-weight:700;font-size:13px"><?= h($user['name'] ?: $user['email']) ?></div>
+            <div class="role-badge"><?= h(ROLES[$role] ?? $role) ?></div>
+        </div>
+    </div>
+    <a class="nav" href="<?= h(app_url('logout')) ?>">🚪 ログアウト</a>
+</aside>
+<main class="main">
+    <div class="topbar">
+        <h2>ダッシュボード</h2>
+        <span class="grow"></span>
+        <?php if (count($memberships) > 1): ?>
+            <select onchange="if(this.value)location.href=this.value">
+                <?php foreach ($memberships as $m): ?>
+                    <option value="<?= h(app_url('switchgroup', ['gid' => (int) $m['id']])) ?>" <?= (int) $m['id'] === $gid ? 'selected' : '' ?>>
+                        <?= h($m['name']) ?>（<?= h(ROLES[$m['role']] ?? $m['role']) ?>）
+                    </option>
+                <?php endforeach; ?>
+            </select>
+        <?php else: ?>
+            <span class="muted"><?= h($group['name']) ?></span>
+        <?php endif; ?>
+    </div>
 
     <?php if ($flashMsg): ?>
         <div class="flash <?= h($flashMsg[0]) ?>"><?= nl2br(h($flashMsg[1])) ?></div>
@@ -1304,10 +1327,9 @@ function render_scan_page(array $user, array $group, int $gid): void
     <?php endif; ?>
 
     <p class="hint" style="margin-top:18px">
-        ※ コストは手動入力（v1）。使用箇所(usages)は本来スキャナCLIが自動検出してプッシュします。
-        APIキー本体は保存せず、鍵の在りか(<code>env: XXX</code> 等)のみを記録します。
-        スキャナ連携・各社billing API連携は将来フェーズ（仕様書 §6,§9）。
+        ※ コストは⟳取得 or 手入力。一覧ではURLは展開時のみ表示。APIキー本体は保存せず暗号化／鍵の在りかのみ記録します。
     </p>
+</main>
 </div>
 <div id="abtToast"></div>
 
