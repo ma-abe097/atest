@@ -1078,13 +1078,24 @@ function render_scan_page(array $user, array $group, int $gid): void
             </tr>
         <?php $pj = 0; foreach ($projects as $proj): $pj++;
             $pents = $proj['entries'];
-            // キーが定義されているファイル（重複排除）
-            $keyFiles = [];
+            // 使用ファイル（重複排除）。キー定義ファイルは🔑で強調し先頭に。
+            $files = [];
             foreach ($pents as $pe) {
                 foreach (($usagesByApi[(int) $pe['id']] ?? []) as $u) {
-                    if (is_key_def_usage($u)) { $keyFiles[$u['repo'] . '|' . $u['file']] = $u; }
+                    $k = $u['repo'] . '|' . $u['file'];
+                    $isKey = is_key_def_usage($u);
+                    if (!isset($files[$k])) {
+                        $files[$k] = ['repo' => $u['repo'], 'file' => $u['file'], 'line' => $u['line'], 'is_key' => $isKey];
+                    } elseif ($isKey) {
+                        $files[$k]['is_key'] = true;
+                        if ($u['line'] !== null) { $files[$k]['line'] = $u['line']; }
+                    }
                 }
             }
+            uasort($files, static fn($a, $b) => ($b['is_key'] <=> $a['is_key']) ?: strcmp((string) $a['file'], (string) $b['file']));
+            // このプロジェクトのサイト一覧
+            $projSites = [];
+            foreach ($pents as $pe) { if ($pe['site'] !== '') { $projSites[$pe['site']] = 1; } }
         ?>
             <tr class="prod<?= $gi ?> p<?= $gi ?>-proj" style="display:none">
                 <td style="text-align:right"><span id="jc<?= $gi ?>_<?= $pj ?>" class="caret" onclick="toggleProj(<?= $gi ?>,<?= $pj ?>)" style="cursor:pointer">▶</span></td>
@@ -1101,15 +1112,19 @@ function render_scan_page(array $user, array $group, int $gid): void
                     <?php endforeach; endif; ?>
                 </td>
             </tr>
-            <!-- キーが入っているファイル -->
+            <!-- 使用ファイル / サイト -->
             <tr class="prod<?= $gi ?> p<?= $gi ?>j<?= $pj ?>-file" style="display:none">
                 <td></td>
                 <td colspan="3" style="padding-left:48px">
-                    <div class="hint" style="margin-bottom:4px">🔑 キーが入っているファイル</div>
-                    <?php if (!$keyFiles): ?>
-                        <span class="muted">（スキャンで検出されたキー定義ファイルはありません。鍵の在りか: <?= h($pents[0]['key_location'] ?: '不明') ?>）</span>
-                    <?php else: foreach ($keyFiles as $u): ?>
-                        <div>📄 <code><?= h($u['repo']) ?><?= $u['repo'] !== '' ? ' / ' : '' ?><?= h($u['file']) ?><?= $u['line'] !== null ? ':' . (int) $u['line'] : '' ?></code></div>
+                    <div class="hint" style="margin-bottom:4px">
+                        📂 使用ファイル（<strong>🔑</strong>=キーが定義されているファイル）
+                        <?php if ($projSites): ?>｜サイト: <?= h(implode(', ', array_keys($projSites))) ?><?php endif; ?>
+                        <?php if ($pents[0]['key_location'] !== ''): ?>｜鍵の在りか: <?= h($pents[0]['key_location']) ?><?php endif; ?>
+                    </div>
+                    <?php if (!$files): ?>
+                        <span class="muted">ファイル内に使用箇所が見つかりません（キーがサーバー環境変数等にある可能性）。サイト: <?= h(implode(', ', array_keys($projSites)) ?: '未設定') ?></span>
+                    <?php else: foreach ($files as $f): ?>
+                        <div><?= $f['is_key'] ? '🔑' : '📄' ?> <code><?= h($f['repo']) ?><?= $f['repo'] !== '' ? ' / ' : '' ?><?= h($f['file']) ?><?= $f['line'] !== null ? ':' . (int) $f['line'] : '' ?></code></div>
                     <?php endforeach; endif; ?>
                 </td>
             </tr>
