@@ -344,7 +344,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pname = trim((string) ($_POST['name'] ?? ''));
         $pprod = trim((string) ($_POST['product'] ?? ''));
         $pproj = trim((string) ($_POST['openai_project_id'] ?? ''));
-        $ptype = in_array($_POST['cost_type'] ?? '', ['', 'openai', 'twilio'], true) ? $_POST['cost_type'] : '';
+        $ptype = in_array($_POST['cost_type'] ?? '', ['', 'openai', 'twilio', 'dataforseo', 'vonage', 'serpapi'], true) ? $_POST['cost_type'] : '';
         $pacct = trim((string) ($_POST['cost_account'] ?? ''));
         if ($pname === '') { flash('err', '箱の名前は必須です。'); redirect_self(); }
         // 管理キー（OpenAI Admin）任意
@@ -381,7 +381,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         require_role_at_least($gid, 'member');
         $cidIn = isset($_POST['credential_id']) && $_POST['credential_id'] !== '' ? (int) $_POST['credential_id'] : null;
         $cname = trim((string) ($_POST['name'] ?? ''));
-        $ctype = in_array($_POST['cost_type'] ?? '', ['', 'openai', 'twilio'], true) ? (string) $_POST['cost_type'] : '';
+        $ctype = in_array($_POST['cost_type'] ?? '', ['', 'openai', 'twilio', 'dataforseo', 'vonage', 'serpapi'], true) ? (string) $_POST['cost_type'] : '';
         $cacct = trim((string) ($_POST['cost_account'] ?? ''));
         $cproj = trim((string) ($_POST['openai_project_id'] ?? ''));
         $csecret = (string) ($_POST['secret'] ?? '');
@@ -1344,6 +1344,9 @@ function render_modals(string $csrf, array $names, array $credentials): void
                         <option value="">なし</option>
                         <option value="openai">OpenAI（Admin キー）</option>
                         <option value="twilio">Twilio</option>
+                        <option value="dataforseo">DataForSEO</option>
+                        <option value="vonage">Vonage</option>
+                        <option value="serpapi">SerpApi</option>
                     </select>
                 </div>
                 <div class="field full" id="cf_acct_wrap" style="display:none"><label id="cf_acct_label">アカウントID</label><input name="cost_account" id="cf_acct" placeholder="Twilio: Account SID（ACxxxx）"></div>
@@ -1401,9 +1404,12 @@ function render_modals(string $csrf, array $names, array $credentials): void
     }
     function cfTypeChange() {
         const t = document.getElementById('cf_cost_type').value;
+        const acctTypes = { twilio:'Twilio Account SID', vonage:'Vonage API Key', dataforseo:'DataForSEO ログイン（メール）' };
         document.getElementById('cf_proj_wrap').style.display = (t === 'openai' || t === '') ? '' : 'none';
-        document.getElementById('cf_acct_wrap').style.display = (t === 'twilio') ? '' : 'none';
-        if (t === 'twilio') { document.getElementById('cf_acct_label').textContent = 'Twilio Account SID'; }
+        document.getElementById('cf_acct_wrap').style.display = acctTypes[t] ? '' : 'none';
+        if (acctTypes[t]) { document.getElementById('cf_acct_label').textContent = acctTypes[t]; }
+        const ph = { openai:'sk-admin-...', twilio:'Twilio Auth Token', vonage:'Vonage API Secret', dataforseo:'DataForSEO APIパスワード', serpapi:'SerpApi API Key' };
+        document.getElementById('cf_secret').placeholder = ph[t] || 'キー / トークン';
     }
     function openCred(c) {
         c = c || {};
