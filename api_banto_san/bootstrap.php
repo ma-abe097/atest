@@ -738,6 +738,21 @@ function fetch_project_cost(int $gid, array $project): array
                 $c['note'] = ($c['note'] ?? '') . ' / 残高取得NG: ' . $e->getMessage();
             }
             break;
+        case 'dataforseo':
+            if ($account === '' || $secret === null) { throw new RuntimeException('DataForSEOは ログイン（アカウントID欄）と APIパスワード（キー欄）が必要です。'); }
+            $c = cost_dataforseo($account, $secret);
+            if (isset($c['balance'])) { $balance = $c['balance']; unset($c['balance']); }
+            break;
+        case 'vonage':
+            if ($account === '' || $secret === null) { throw new RuntimeException('Vonageは API Key（アカウントID欄）と API Secret（キー欄）が必要です。'); }
+            $b = cost_vonage($account, $secret);
+            $balance = $b['amount'];
+            $c = ['amount' => 0.0, 'currency' => $b['currency'], 'note' => 'Vonage: 残高のみ取得（当月利用額はAPI非対応）'];
+            break;
+        case 'serpapi':
+            if ($secret === null) { throw new RuntimeException('SerpApiは API Key（キー欄）が必要です。'); }
+            $c = cost_serpapi($secret);
+            break;
         default:
             throw new RuntimeException('この箱のコスト種別が未設定です。編集でコスト種別（OpenAI / Twilio 等）を選んでください。');
     }
@@ -786,6 +801,58 @@ function cost_twilio(string $sid, string $token): array
     $amount = $total !== null ? $total : $sum;
     if ($cur === '') { $cur = 'USD'; }
     return ['amount' => round(abs($amount), 2), 'currency' => $cur, 'note' => "Twilio: {$n}レコード"];
+}
+
+/**
+ * DataForSEO 残高・課金（login + APIパスワード、Basic認証）。
+ * user_data から balance / total を取得。amount は使用合計(total-balance)を推定。
+ */
+function cost_dataforseo(string $login, string $password): array
+{
+    $url = 'https://api.dataforseo.com/v3/appendix/user_data';
+    $r = http_request('GET', $url, ['headers' => ['Authorization: Basic ' . base64_encode($login . ':' . $password)]]);
+    if ($r['status'] === 401) { throw new RuntimeException('DataForSEO認証に失敗しました（ログイン/パスワードをご確認ください）。'); }
+    if ($r['status'] !== 200) { throw new RuntimeException('DataForSEO APIエラー (HTTP ' . $r['status'] . ')。' . substr((string) $r['body'], 0, 200)); }
+    $d = json_decode($r['body'], true);
+    $money = $d['tasks'][0]['result'][0]['money'] ?? [];
+    $balance = isset($money['balance']) ? (float) $money['balance'] : null;
+    $total   = isset($money['total']) ? (float) $money['total'] : null;
+    $cur = strtoupper((string) ($money['currency'] ?? 'USD')) ?: 'USD';
+    // 当月利用額はAPIで直接取れないため、累計利用(total-balance)を amount として参考表示
+    $spent = ($total !== null && $balance !== null) ? max(0.0, $total - $balance) : 0.0;
+    $out = ['amount' => round($spent, 2), 'currency' => $cur, 'note' => 'DataForSEO: 累計利用の推定（total-balance）'];
+    if ($balance !== null) { $out['balance'] = round($balance, 2); }
+    return $out;
+}
+
+/** Vonage 残高（API Key + API Secret）。['amount'=>float,'currency'=>string] */
+function cost_vonage(string $apiKey, string $apiSecret): array
+{
+    $url = 'https://rest.nexmo.com/account/get-balance?api_key=' . rawurlencode($apiKey) . '&api_secret=' . rawurlencode($apiSecret);
+    $r = http_request('GET', $url);
+    if ($r['status'] === 401) { throw new RuntimeException('Vonage認証に失敗しました（API Key/Secretをご確認ください）。'); }
+    if ($r['status'] !== 200) { throw new RuntimeException('Vonage APIエラー (HTTP ' . $r['status'] . ')。' . substr((string) $r['body'], 0, 200)); }
+    $d = json_decode($r['body'], true);
+    if (!isset($d['value'])) { throw new RuntimeException('Vonage残高の取得に失敗しました。'); }
+    return ['amount' => round((float) $d['value'], 2), 'currency' => 'EUR'];
+}
+
+/**
+ * SerpApi アカウント情報（API Key）。当月利用は検索回数ベース。
+ * amount にはプラン月額(plan_monthly_price)を入れる（USD）。
+ */
+function cost_serpapi(string $apiKey): array
+{
+    $url = 'https://serpapi.com/account?api_key=' . rawurlencode($apiKey);
+    $r = http_request('GET', $url);
+    if ($r['status'] === 401) { throw new RuntimeException('SerpApi認証に失敗しました（API Keyをご確認ください）。'); }
+    if ($r['status'] !== 200) { throw new RuntimeException('SerpApi APIエラー (HTTP ' . $r['status'] . ')。' . substr((string) $r['body'], 0, 200)); }
+    $d = json_decode($r['body'], true);
+    $price = isset($d['plan_monthly_price']) ? (float) $d['plan_monthly_price'] : 0.0;
+    $used  = $d['this_month_usage'] ?? null;
+    $left  = $d['total_searches_left'] ?? ($d['plan_searches_left'] ?? null);
+    $note  = 'SerpApi: 当月 ' . ($used !== null ? (int) $used : '?') . ' 検索' . ($left !== null ? ' / 残 ' . (int) $left : '');
+    return ['amount' => round($price, 2), 'currency' => 'USD', 'note' => $note];
 }
 
 /* ------------------------------------------------------------------ *
