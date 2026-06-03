@@ -368,7 +368,23 @@ function db(): PDO
         )
     SQL);
 
-    // v1（グループ無し）DB からのマイグレーション: apis.group_id を後付け。
+    // コスト取得キー（名前付きクレデンシャル）。プロダクト/箱から選んで使う。
+    $pdo->exec(<<<SQL
+        CREATE TABLE IF NOT EXISTS credentials (
+            id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_id           INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+            name               TEXT    NOT NULL,
+            cost_type          TEXT    NOT NULL DEFAULT '',
+            cost_account       TEXT    NOT NULL DEFAULT '',
+            openai_project_id  TEXT    NOT NULL DEFAULT '',
+            secret_enc         TEXT,
+            secret_hint        TEXT,
+            secret_fp          TEXT,
+            created_at         TEXT    NOT NULL,
+            updated_at         TEXT    NOT NULL
+        )
+    SQL);
+
     $cols = $pdo->query('PRAGMA table_info(apis)')->fetchAll();
     $hasGroup = false;
     foreach ($cols as $c) {
@@ -404,10 +420,16 @@ function db(): PDO
 
     // projects.product を後付け
     $projCols = array_column($pdo->query('PRAGMA table_info(projects)')->fetchAll(), 'name');
-    foreach (['product' => "TEXT NOT NULL DEFAULT ''", 'cost_type' => "TEXT NOT NULL DEFAULT ''", 'cost_account' => "TEXT NOT NULL DEFAULT ''", 'balance' => 'REAL'] as $col => $def) {
+    foreach (['product' => "TEXT NOT NULL DEFAULT ''", 'cost_type' => "TEXT NOT NULL DEFAULT ''", 'cost_account' => "TEXT NOT NULL DEFAULT ''", 'balance' => 'REAL', 'credential_id' => 'INTEGER'] as $col => $def) {
         if (!in_array($col, $projCols, true)) {
             $pdo->exec("ALTER TABLE projects ADD COLUMN $col $def");
         }
+    }
+
+    // catalog_pref（プロダクトのメタ）に、プロダクト既定のコスト取得キーを後付け
+    $prefCols = array_column($pdo->query('PRAGMA table_info(catalog_pref)')->fetchAll(), 'name');
+    if (!in_array('credential_id', $prefCols, true)) {
+        $pdo->exec('ALTER TABLE catalog_pref ADD COLUMN credential_id INTEGER');
     }
 
     // 既存 cost_project → projects 箱へ自動移行（projects が空のときだけ）
@@ -487,6 +509,67 @@ function secret_hint(string $plain): string
 }
 
 /* ------------------------------------------------------------------ *
+ *  コスト取得キー（名前付きクレデンシャル）。秘密値は復号して返さない。
+ * ------------------------------------------------------------------ */
+function list_credentials(int $gid): array
+{
+    $st = db()->prepare('SELECT id, name, cost_type, cost_account, openai_project_id, secret_hint, secret_fp FROM credentials WHERE group_id = :g ORDER BY name');
+    $st->execute([':g' => $gid]);
+    return $st->fetchAll();
+}
+
+function get_credential(int $gid, int $id): ?array
+{
+    $st = db()->prepare('SELECT * FROM credentials WHERE id = :id AND group_id = :g');
+    $st->execute([':id' => $id, ':g' => $gid]);
+    return $st->fetch() ?: null;
+}
+
+/** クレデンシャルを作成/更新。$secret 空なら既存の秘密値を保持。新規で空なら null。戻り値: id */
+function save_credential(int $gid, ?int $id, string $name, string $costType, string $account, string $openaiProj, string $secret): int
+{
+    $now = now();
+    if ($id === null) {
+        db()->prepare('INSERT INTO credentials (group_id, name, cost_type, cost_account, openai_project_id, created_at, updated_at) VALUES (:g,:n,:ct,:ca,:p,:c,:c)')
+            ->execute([':g' => $gid, ':n' => $name, ':ct' => $costType, ':ca' => $account, ':p' => $openaiProj, ':c' => $now]);
+        $id = (int) db()->lastInsertId();
+    } else {
+        db()->prepare('UPDATE credentials SET name=:n, cost_type=:ct, cost_account=:ca, openai_project_id=:p, updated_at=:u WHERE id=:id AND group_id=:g')
+            ->execute([':n' => $name, ':ct' => $costType, ':ca' => $account, ':p' => $openaiProj, ':u' => $now, ':id' => $id, ':g' => $gid]);
+    }
+    if ($secret !== '' && encryption_ready()) {
+        db()->prepare('UPDATE credentials SET secret_enc=:e, secret_hint=:h, secret_fp=:f WHERE id=:id AND group_id=:g')
+            ->execute([':e' => encrypt_secret($secret), ':h' => secret_hint($secret), ':f' => secret_fingerprint($secret), ':id' => $id, ':g' => $gid]);
+    }
+    return $id;
+}
+
+function delete_credential(int $gid, int $id): void
+{
+    db()->prepare('UPDATE projects SET credential_id = NULL WHERE credential_id = :id AND group_id = :g')->execute([':id' => $id, ':g' => $gid]);
+    db()->prepare('UPDATE catalog_pref SET credential_id = NULL WHERE credential_id = :id AND group_id = :g')->execute([':id' => $id, ':g' => $gid]);
+    db()->prepare('DELETE FROM credentials WHERE id = :id AND group_id = :g')->execute([':id' => $id, ':g' => $gid]);
+}
+
+/** プロダクト既定のキーID（catalog_pref.credential_id） */
+function product_credential_id(int $gid, string $product): ?int
+{
+    $st = db()->prepare('SELECT credential_id FROM catalog_pref WHERE group_id = :g AND name = :n');
+    $st->execute([':g' => $gid, ':n' => $product]);
+    $v = $st->fetchColumn();
+    return ($v === false || $v === null) ? null : (int) $v;
+}
+
+/** プロダクト既定のキーを設定（catalog_pref を upsert、position は保持/既定0） */
+function set_product_credential(int $gid, string $product, ?int $credId): void
+{
+    db()->prepare(
+        'INSERT INTO catalog_pref (group_id, name, position, credential_id) VALUES (:g,:n,0,:c)
+         ON CONFLICT(group_id, name) DO UPDATE SET credential_id = :c'
+    )->execute([':g' => $gid, ':n' => $product, ':c' => $credId]);
+}
+
+/* ------------------------------------------------------------------ *
  *  プロジェクト箱（名前＋proj紐付け）と URL の所属管理
  * ------------------------------------------------------------------ */
 function list_projects(int $gid): array
@@ -549,17 +632,76 @@ function group_openai_admin_key(int $gid): ?string
     return null;
 }
 
-/** 箱のコストを取得して保存。cost_type で各社へ振り分け。 */
+/**
+ * 箱のコスト取得に使うキー（クレデンシャル）を優先順位で解決する。
+ *   1) 箱が選んだキー(credential_id)
+ *   2) 箱の直接入力キー(secret_enc + cost_type)
+ *   3) プロダクト既定のキー(catalog_pref.credential_id)
+ *   4) グループ内の任意のAdminキー（最後の保険・OpenAIのみ）
+ * 戻り値: ['cost_type','secret','cost_account','openai_project_id','source'] or null
+ */
+function resolve_cost_source(int $gid, array $project): ?array
+{
+    // 1) 箱が選んだキー
+    $cid = isset($project['credential_id']) && $project['credential_id'] !== null ? (int) $project['credential_id'] : null;
+    if ($cid) {
+        $cr = get_credential($gid, $cid);
+        if ($cr) {
+            return [
+                'cost_type'         => (string) $cr['cost_type'],
+                'secret'            => decrypt_secret($cr['secret_enc'] ?? null),
+                'cost_account'      => (string) $cr['cost_account'],
+                // 箱側のプロジェクトID指定があれば優先、無ければキー既定
+                'openai_project_id' => trim((string) ($project['openai_project_id'] ?? '')) ?: (string) $cr['openai_project_id'],
+                'source'            => 'credential:' . $cr['name'],
+            ];
+        }
+    }
+    // 2) 箱の直接入力キー
+    $boxSecret = decrypt_secret($project['secret_enc'] ?? null);
+    $boxType   = trim((string) ($project['cost_type'] ?? ''));
+    if ($boxType === '') { $boxType = trim((string) ($project['openai_project_id'] ?? '')) !== '' ? 'openai' : ''; }
+    if ($boxSecret !== null && $boxType !== '') {
+        return ['cost_type' => $boxType, 'secret' => $boxSecret, 'cost_account' => trim((string) ($project['cost_account'] ?? '')),
+                'openai_project_id' => trim((string) ($project['openai_project_id'] ?? '')), 'source' => 'box'];
+    }
+    // 3) プロダクト既定のキー
+    $pcid = product_credential_id($gid, (string) ($project['product'] ?? ''));
+    if ($pcid) {
+        $cr = get_credential($gid, $pcid);
+        if ($cr) {
+            return [
+                'cost_type'         => (string) $cr['cost_type'],
+                'secret'            => decrypt_secret($cr['secret_enc'] ?? null),
+                'cost_account'      => (string) $cr['cost_account'],
+                'openai_project_id' => trim((string) ($project['openai_project_id'] ?? '')) ?: (string) $cr['openai_project_id'],
+                'source'            => 'product:' . $cr['name'],
+            ];
+        }
+    }
+    // 4) グループ内のAdminキー（OpenAIのみ・保険）
+    if ($boxType === 'openai' || trim((string) ($project['openai_project_id'] ?? '')) !== '') {
+        $k = group_openai_admin_key($gid);
+        if ($k !== null) {
+            return ['cost_type' => 'openai', 'secret' => $k, 'cost_account' => '',
+                    'openai_project_id' => trim((string) ($project['openai_project_id'] ?? '')), 'source' => 'group'];
+        }
+    }
+    return null;
+}
+
+/** 箱のコストを取得して保存。解決したクレデンシャルに従い各社へ振り分け。 */
 function fetch_project_cost(int $gid, array $project): array
 {
-    $type = trim((string) ($project['cost_type'] ?? ''));
-    if ($type === '') {
-        // 後方互換：proj紐付けがあれば OpenAI とみなす
-        $type = trim((string) ($project['openai_project_id'] ?? '')) !== '' ? 'openai' : '';
+    $src = resolve_cost_source($gid, $project);
+    if ($src === null) {
+        throw new RuntimeException('この箱に使うキーが見つかりません。箱の編集で「使うキー」を選ぶか、プロダクトの既定キーを設定してください。');
     }
-    $secret  = decrypt_secret($project['secret_enc'] ?? null);
-    $account = trim((string) ($project['cost_account'] ?? ''));
+    $type    = $src['cost_type'];
+    $secret  = $src['secret'];
+    $account = $src['cost_account'];
     $balance = null;
+    $project['openai_project_id'] = $src['openai_project_id'];   // 解決後の絞り込みIDを反映
 
     switch ($type) {
         case 'openai':

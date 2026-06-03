@@ -341,8 +341,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $costRaw = trim((string) ($_POST['monthly_cost'] ?? ''));
         $mcost = ($costRaw === '') ? null : (float) $costRaw;
         $mcur = trim((string) ($_POST['currency'] ?? 'USD')) ?: 'USD';
-        $pdo->prepare('UPDATE projects SET name=:n, product=:prod, cost_type=:ct, cost_account=:ca, openai_project_id=:p, monthly_cost=:mc, currency=:cur, updated_at=:u WHERE id=:id AND group_id=:g')
-            ->execute([':n'=>$pname, ':prod'=>$pprod, ':ct'=>$ptype, ':ca'=>$pacct, ':p'=>$pproj, ':mc'=>$mcost, ':cur'=>$mcur, ':u'=>now(), ':id'=>$pidIn, ':g'=>$gid]);
+        $credRaw = (string) ($_POST['credential_id'] ?? '');
+        $credId = ctype_digit($credRaw) ? (int) $credRaw : null;   // 数値=キー選択 / それ以外=継承・直接入力
+        $pdo->prepare('UPDATE projects SET name=:n, product=:prod, cost_type=:ct, cost_account=:ca, openai_project_id=:p, monthly_cost=:mc, currency=:cur, credential_id=:cid, updated_at=:u WHERE id=:id AND group_id=:g')
+            ->execute([':n'=>$pname, ':prod'=>$pprod, ':ct'=>$ptype, ':ca'=>$pacct, ':p'=>$pproj, ':mc'=>$mcost, ':cur'=>$mcur, ':cid'=>$credId, ':u'=>now(), ':id'=>$pidIn, ':g'=>$gid]);
         if ($secretIn !== '' && encryption_ready()) {
             $pdo->prepare('UPDATE projects SET secret_enc=:e, secret_hint=:h, secret_fp=:f WHERE id=:id AND group_id=:g')
                 ->execute([':e'=>encrypt_secret($secretIn), ':h'=>secret_hint($secretIn), ':f'=>secret_fingerprint($secretIn), ':id'=>$pidIn, ':g'=>$gid]);
@@ -358,6 +360,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->prepare('UPDATE usages SET project_id=NULL WHERE project_id=:p AND api_id IN (SELECT id FROM apis WHERE group_id=:g)')->execute([':p'=>$pidIn, ':g'=>$gid]);
         $pdo->prepare('DELETE FROM projects WHERE id=:id AND group_id=:g')->execute([':id'=>$pidIn, ':g'=>$gid]);
         flash('ok', 'プロジェクト箱を削除しました（URLは未割当に戻しました）。');
+        redirect_self();
+    }
+
+    if ($action === 'save_credential') {
+        require_role_at_least($gid, 'member');
+        $cidIn = isset($_POST['credential_id']) && $_POST['credential_id'] !== '' ? (int) $_POST['credential_id'] : null;
+        $cname = trim((string) ($_POST['name'] ?? ''));
+        $ctype = in_array($_POST['cost_type'] ?? '', ['', 'openai', 'twilio'], true) ? (string) $_POST['cost_type'] : '';
+        $cacct = trim((string) ($_POST['cost_account'] ?? ''));
+        $cproj = trim((string) ($_POST['openai_project_id'] ?? ''));
+        $csecret = (string) ($_POST['secret'] ?? '');
+        if ($cname === '') { flash('err', 'キーの名前は必須です。'); redirect_self(); }
+        if ($cidIn === null && $csecret === '') { flash('err', 'キーの値を入力してください。'); redirect_self(); }
+        if ($csecret !== '' && !encryption_ready()) { flash('err', 'APP_ENCRYPTION_KEY が未設定のため、キーを保存できません。'); redirect_self(); }
+        save_credential($gid, $cidIn, $cname, $ctype, $cacct, $cproj, $csecret);
+        flash('ok', 'コスト取得キーを保存しました。');
+        redirect_self();
+    }
+
+    if ($action === 'delete_credential') {
+        require_role_at_least($gid, 'admin');
+        delete_credential($gid, (int) ($_POST['credential_id'] ?? 0));
+        flash('ok', 'コスト取得キーを削除しました。');
+        redirect_self();
+    }
+
+    if ($action === 'set_product_credential') {
+        require_role_at_least($gid, 'member');
+        $prod = (string) ($_POST['product'] ?? '');
+        $credRaw = (string) ($_POST['credential_id'] ?? '');
+        $credId = ctype_digit($credRaw) ? (int) $credRaw : null;
+        if ($prod !== '') { set_product_credential($gid, $prod, $credId); }
+        flash('ok', 'プロダクトの既定キーを設定しました。');
         redirect_self();
     }
 
@@ -512,6 +547,14 @@ $apis = $stmt->fetchAll();
 $projects = list_projects($gid);
 $projById = [];
 foreach ($projects as $p) { $projById[(int) $p['id']] = $p; }
+
+// コスト取得キー（名前付きクレデンシャル）
+$credentials = list_credentials($gid);
+$credById = [];
+foreach ($credentials as $c) { $credById[(int) $c['id']] = $c; }
+// プロダクト既定キーを持つプロダクト名の集合（⟳コストボタン表示判定に使う）
+$prodCredSet = [];
+foreach ($pdo->query("SELECT name FROM catalog_pref WHERE group_id = " . (int) $gid . " AND credential_id IS NOT NULL")->fetchAll(PDO::FETCH_COLUMN) as $pn) { $prodCredSet[(string) $pn] = true; }
 
 // 箱ごとのURL件数（フィルタ非依存）
 $boxUrlCount = [];
@@ -1166,7 +1209,7 @@ function render_scan_page(array $user, array $group, int $gid): void
 }
 
 /** API追加/編集・プロジェクト箱 編集モーダル＋その操作JS（dashboard/詳細で共用） */
-function render_modals(string $csrf, array $names): void
+function render_modals(string $csrf, array $names, array $credentials): void
 {
     if (!can_edit()) { return; }
     ?>
@@ -1231,18 +1274,31 @@ function render_modals(string $csrf, array $names): void
                     <div class="hint">この箱がどのAPI（プロダクト）の下に表示されるか。</div>
                 </div>
                 <div class="field full" style="border-top:1px dashed var(--line);padding-top:10px">
-                    <label>コスト自動取得の種別</label>
-                    <select name="cost_type" id="pf_cost_type" onchange="pfCostTypeChange()">
-                        <option value="">なし（手入力）</option>
-                        <option value="openai">OpenAI</option>
-                        <option value="twilio">Twilio</option>
+                    <label>使うキー（コスト取得）</label>
+                    <select name="credential_id" id="pf_cred" onchange="pfCredChange()">
+                        <option value="">（プロダクトの既定キーを使う）</option>
+                        <?php foreach ($credentials as $cr): ?>
+                            <option value="<?= (int) $cr['id'] ?>"><?= h($cr['name']) ?>（<?= h($cr['cost_type'] !== '' ? strtoupper($cr['cost_type']) : '種別なし') ?>）</option>
+                        <?php endforeach; ?>
+                        <option value="direct">この箱に直接入力</option>
                     </select>
+                    <div class="hint">登録済みキーを選ぶか、プロダクトの既定キーを継承。個別に入れたい時だけ「直接入力」。<a href="index.php#credpanel">キーを管理</a></div>
                 </div>
-                <div class="field full" id="pf_proj_wrap"><label>OpenAI プロジェクトID</label><input name="openai_project_id" id="pf_proj" placeholder="proj_xxxxx（空＝組織全体）"></div>
-                <div class="field full" id="pf_acct_wrap" style="display:none"><label id="pf_acct_label">アカウントID</label><input name="cost_account" id="pf_acct" placeholder="Twilio: Account SID（ACxxxx）"></div>
+                <div class="field full" id="pf_proj_wrap"><label>OpenAI プロジェクトID（任意・この箱だけ絞り込み）</label><input name="openai_project_id" id="pf_proj" placeholder="proj_xxxxx（空＝キー既定 / 組織全体）"></div>
+                <div id="pf_direct_wrap" style="display:none">
+                    <div class="field full">
+                        <label>コスト自動取得の種別（直接入力時）</label>
+                        <select name="cost_type" id="pf_cost_type" onchange="pfCostTypeChange()">
+                            <option value="">なし（手入力）</option>
+                            <option value="openai">OpenAI</option>
+                            <option value="twilio">Twilio</option>
+                        </select>
+                    </div>
+                    <div class="field full" id="pf_acct_wrap" style="display:none"><label id="pf_acct_label">アカウントID</label><input name="cost_account" id="pf_acct" placeholder="Twilio: Account SID（ACxxxx）"></div>
+                    <div class="field full"><label><?= icon('lock', 15) ?> キー / トークン（コスト取得用・暗号化保存）</label><input type="password" name="secret" id="pf_secret" autocomplete="new-password" placeholder="OpenAI: sk-admin-... / Twilio: Auth Token"><div class="hint" id="pf_secret_state"></div></div>
+                </div>
                 <div class="field"><label>月額（手入力・任意）</label><input name="monthly_cost" id="pf_cost" type="number" step="0.01" min="0" placeholder="自動取得しない場合"></div>
                 <div class="field"><label>通貨</label><select name="currency" id="pf_currency"><?php foreach (['USD','JPY','EUR','GBP'] as $c): ?><option value="<?= $c ?>"><?= $c ?></option><?php endforeach; ?></select></div>
-                <div class="field full"><label><?= icon('lock', 15) ?> キー / トークン（コスト取得用・暗号化保存）</label><input type="password" name="secret" id="pf_secret" autocomplete="new-password" placeholder="OpenAI: sk-admin-... / Twilio: Auth Token"><div class="hint" id="pf_secret_state"></div></div>
             </div>
         </div>
         <div class="modal-foot">
@@ -1251,14 +1307,65 @@ function render_modals(string $csrf, array $names): void
         </div>
     </form>
 </dialog>
+
+<!-- コスト取得キー（クレデンシャル）編集モーダル -->
+<dialog id="credDialog">
+    <form method="post">
+        <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+        <input type="hidden" name="action" value="save_credential">
+        <input type="hidden" name="credential_id" id="cf_id" value="">
+        <div class="modal-head" id="credModalTitle">コスト取得キー</div>
+        <div class="modal-body">
+            <div class="grid">
+                <div class="field full"><label>キーの名前 <span style="color:#b42318">*</span></label><input name="name" id="cf_name" required placeholder="例: OpenAI 本番Admin"><div class="hint">箱やプロダクトの「使うキー」で表示される名前です。</div></div>
+                <div class="field full"><label>種別</label>
+                    <select name="cost_type" id="cf_cost_type" onchange="cfTypeChange()">
+                        <option value="">なし</option>
+                        <option value="openai">OpenAI（Admin キー）</option>
+                        <option value="twilio">Twilio</option>
+                    </select>
+                </div>
+                <div class="field full" id="cf_acct_wrap" style="display:none"><label id="cf_acct_label">アカウントID</label><input name="cost_account" id="cf_acct" placeholder="Twilio: Account SID（ACxxxx）"></div>
+                <div class="field full" id="cf_proj_wrap"><label>OpenAI プロジェクトID（既定・任意）</label><input name="openai_project_id" id="cf_proj" placeholder="proj_xxxxx（空＝組織全体）"><div class="hint">箱側で個別指定があればそちらが優先されます。</div></div>
+                <div class="field full"><label><?= icon('lock', 15) ?> キー / トークン（暗号化保存）</label><input type="password" name="secret" id="cf_secret" autocomplete="new-password" placeholder="OpenAI: sk-admin-... / Twilio: Auth Token"><div class="hint" id="cf_secret_state"></div></div>
+            </div>
+        </div>
+        <div class="modal-foot">
+            <button type="button" onclick="document.getElementById('credDialog').close()">キャンセル</button>
+            <button type="submit" class="primary">保存</button>
+        </div>
+    </form>
+</dialog>
 <script>
+    const ABT_CREDS = <?= json_encode(array_map(static fn($c) => ['id' => (int) $c['id'], 'name' => $c['name'], 'type' => $c['cost_type']], $credentials), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?: '[]' ?>;
     const projDialog = document.getElementById('projDialog');
+    const credDialog = document.getElementById('credDialog');
     function pfCostTypeChange() {
         const t = document.getElementById('pf_cost_type').value;
-        document.getElementById('pf_proj_wrap').style.display = (t === 'openai') ? '' : 'none';
         const aw = document.getElementById('pf_acct_wrap');
         aw.style.display = (t === 'twilio') ? '' : 'none';
         if (t === 'twilio') { document.getElementById('pf_acct_label').textContent = 'Twilio Account SID'; }
+        pfProjVisibility();
+    }
+    // 使うキー選択で、直接入力欄／OpenAI projectID欄の表示を切り替え
+    function pfCredChange() {
+        const v = document.getElementById('pf_cred').value;
+        document.getElementById('pf_direct_wrap').style.display = (v === 'direct') ? '' : 'none';
+        pfProjVisibility();
+    }
+    function pfEffectiveType() {
+        const v = document.getElementById('pf_cred').value;
+        if (v === 'direct') { return document.getElementById('pf_cost_type').value; }
+        if (v === '') { return ''; }   // 継承（種別はプロダクト側のキー依存）→ProjID欄は出す
+        const cr = ABT_CREDS.find(c => String(c.id) === v);
+        return cr ? cr.type : '';
+    }
+    function pfProjVisibility() {
+        const v = document.getElementById('pf_cred').value;
+        const t = pfEffectiveType();
+        // OpenAI（または継承＝種別不明）のときに projectID 絞り込みを出す
+        const show = (t === 'openai') || (v === '');
+        document.getElementById('pf_proj_wrap').style.display = show ? '' : 'none';
     }
     function openProject(p) {
         p = p || {};
@@ -1266,15 +1373,35 @@ function render_modals(string $csrf, array $names): void
         document.getElementById('pf_id').value = p.id ?? '';
         document.getElementById('pf_name').value = p.name ?? '';
         document.getElementById('pf_product').value = p.product ?? '';
+        document.getElementById('pf_cred').value = (p.credential_id === null || p.credential_id === undefined || p.credential_id === '') ? '' : String(p.credential_id);
         document.getElementById('pf_cost_type').value = p.cost_type ?? '';
         document.getElementById('pf_acct').value = p.cost_account ?? '';
         document.getElementById('pf_proj').value = p.openai_project_id ?? '';
-        pfCostTypeChange();
+        pfCredChange();
         document.getElementById('pf_cost').value = (p.monthly_cost === null || p.monthly_cost === undefined) ? '' : p.monthly_cost;
         document.getElementById('pf_currency').value = p.currency || 'USD';
         document.getElementById('pf_secret').value = '';
-        document.getElementById('pf_secret_state').textContent = p.secret_hint ? ('現在: ' + p.secret_hint + '（変更時のみ入力）') : 'Adminキー未保存';
+        document.getElementById('pf_secret_state').textContent = p.secret_hint ? ('現在: ' + p.secret_hint + '（変更時のみ入力）') : '直接入力時のみ';
         projDialog.showModal();
+    }
+    function cfTypeChange() {
+        const t = document.getElementById('cf_cost_type').value;
+        document.getElementById('cf_proj_wrap').style.display = (t === 'openai' || t === '') ? '' : 'none';
+        document.getElementById('cf_acct_wrap').style.display = (t === 'twilio') ? '' : 'none';
+        if (t === 'twilio') { document.getElementById('cf_acct_label').textContent = 'Twilio Account SID'; }
+    }
+    function openCred(c) {
+        c = c || {};
+        document.getElementById('credModalTitle').textContent = c.id ? 'キーを編集' : 'キーを追加';
+        document.getElementById('cf_id').value = c.id ?? '';
+        document.getElementById('cf_name').value = c.name ?? '';
+        document.getElementById('cf_cost_type').value = c.cost_type ?? '';
+        document.getElementById('cf_acct').value = c.cost_account ?? '';
+        document.getElementById('cf_proj').value = c.openai_project_id ?? '';
+        document.getElementById('cf_secret').value = '';
+        document.getElementById('cf_secret_state').textContent = c.secret_hint ? ('現在: ' + c.secret_hint + '（変更時のみ入力）') : 'キー未保存';
+        cfTypeChange();
+        credDialog.showModal();
     }
     const dialog = document.getElementById('apiDialog');
     function openCreate() {
@@ -1342,6 +1469,7 @@ if ($route === 'product'):
     $pboxes      = $boxesByProduct[$pname] ?? [];
     $punassigned = $unassignedByProduct[$pname] ?? [];
     $pprovider   = $providerOf[$pname] ?? '';
+    $pCredId     = product_credential_id($gid, $pname);   // このプロダクトの既定キー
 
     // コスト（通貨別）
     $pcost = [];
@@ -1475,6 +1603,26 @@ if ($route === 'product'):
         </div>
     </div>
 
+    <?php if ($editable && $pname !== '（プロダクト未指定）'): ?>
+    <!-- このプロダクトの既定キー -->
+    <div class="panel" style="margin-bottom:18px">
+        <h3><?= icon('key', 16) ?> このプロダクトのコスト取得キー（既定）</h3>
+        <form method="post" class="toolbar" style="margin:0;box-shadow:none;border:none;padding:0;background:none">
+            <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+            <input type="hidden" name="action" value="set_product_credential">
+            <input type="hidden" name="product" value="<?= h($pname) ?>">
+            <select name="credential_id">
+                <option value="">（未設定）</option>
+                <?php foreach ($credentials as $cr): ?>
+                    <option value="<?= (int) $cr['id'] ?>" <?= $pCredId === (int) $cr['id'] ? 'selected' : '' ?>><?= h($cr['name']) ?>（<?= h($cr['cost_type'] !== '' ? strtoupper($cr['cost_type']) : '種別なし') ?>）</option>
+                <?php endforeach; ?>
+            </select>
+            <button class="primary" type="submit">保存</button>
+            <span class="hint">配下の箱が個別キー未設定のとき、このキーでコスト取得します。<a href="index.php#credpanel">キーを管理</a></span>
+        </form>
+    </div>
+    <?php endif; ?>
+
     <!-- 箱とURLの一覧（クリックで開閉・既定は閉じる） -->
     <div class="panel" style="margin-bottom:18px">
         <h3>プロジェクト箱とURL <span class="muted" style="font-weight:400">（箱をクリックでURLを展開）</span></h3>
@@ -1489,10 +1637,10 @@ if ($route === 'product'):
                     <td class="cost"><?= fmt_money($b['monthly_cost'] === null ? null : (float) $b['monthly_cost'], $b['currency'] ?: 'USD') ?><?php if (($b['balance'] ?? null) !== null): ?><div class="hint">残高 <?= h($b['currency'] ?: 'USD') ?> <?= number_format((float) $b['balance'], 2) ?></div><?php endif; ?></td>
                     <?php if ($editable): ?>
                     <td class="hide-sm" style="white-space:nowrap" onclick="event.stopPropagation()">
-                        <?php if (($b['cost_type'] ?? '') !== '' || trim((string) $b['openai_project_id']) !== ''): ?>
+                        <?php if (($b['cost_type'] ?? '') !== '' || trim((string) $b['openai_project_id']) !== '' || ($b['credential_id'] ?? null) || $pCredId !== null): ?>
                         <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="fetch_project_cost"><input type="hidden" name="project_id" value="<?= (int) $b['id'] ?>"><button class="link" type="submit" title="コスト取得"><?= icon('refresh', 15) ?> コスト</button></form>
                         <?php endif; ?>
-                        <button class="link" type="button" onclick='openProject(<?= json_encode(["id"=>(int)$b["id"],"name"=>$b["name"],"product"=>$b["product"] ?? "","cost_type"=>$b["cost_type"] ?? "","cost_account"=>$b["cost_account"] ?? "","openai_project_id"=>$b["openai_project_id"],"secret_hint"=>$b["secret_hint"],"monthly_cost"=>$b["monthly_cost"],"currency"=>$b["currency"]], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
+                        <button class="link" type="button" onclick='openProject(<?= json_encode(["id"=>(int)$b["id"],"name"=>$b["name"],"product"=>$b["product"] ?? "","cost_type"=>$b["cost_type"] ?? "","cost_account"=>$b["cost_account"] ?? "","openai_project_id"=>$b["openai_project_id"],"secret_hint"=>$b["secret_hint"],"monthly_cost"=>$b["monthly_cost"],"currency"=>$b["currency"],"credential_id"=>$b["credential_id"] ?? null], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
                         <form method="post" style="display:inline" onsubmit="return confirm('箱「<?= h($b['name']) ?>」を削除しますか？（URLは未割当に戻ります）')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_project"><input type="hidden" name="project_id" value="<?= (int) $b['id'] ?>"><button class="link danger" type="submit">削除</button></form>
                     </td>
                     <?php endif; ?>
@@ -1536,7 +1684,7 @@ if ($route === 'product'):
 </main>
 </div>
 <div id="abtToast"></div>
-<?php render_modals($csrf, $names); ?>
+<?php render_modals($csrf, $names, $credentials); ?>
 <script>
     function toggleBox(bi) {
         const caret = document.getElementById('bc' + bi);
@@ -1715,6 +1863,33 @@ if ($route === 'product'):
         <button class="btn" type="button" onclick="openProject({})"><?= icon('plus', 15) ?> 箱を追加</button>
     </div>
     <?php endif; ?>
+    <?php if ($editable): ?>
+    <details class="stat" id="credpanel" style="width:100%;margin-bottom:10px">
+        <summary style="cursor:pointer;font-weight:600"><?= icon('key') ?> コスト取得キーの管理（<?= count($credentials) ?>）</summary>
+        <p class="hint" style="margin:6px 0">OpenAI Adminキーや Twilio トークンを名前を付けて登録。箱やプロダクトの「使うキー」で選んで使い回せます。</p>
+        <?php if ($credentials): ?>
+        <table style="margin-top:4px">
+            <thead><tr><th>名前</th><th>種別</th><th>既定 proj/SID</th><th>キー</th><th>操作</th></tr></thead>
+            <tbody>
+            <?php foreach ($credentials as $cr): ?>
+                <tr>
+                    <td><?= icon('key', 15) ?> <strong><?= h($cr['name']) ?></strong></td>
+                    <td class="muted"><?= $cr['cost_type'] !== '' ? h(strtoupper($cr['cost_type'])) : '—' ?></td>
+                    <td class="muted"><?= h($cr['openai_project_id'] ?: $cr['cost_account'] ?: '—') ?></td>
+                    <td class="muted"><?= $cr['secret_hint'] ? h($cr['secret_hint']) : '<span style="color:#b42318">未保存</span>' ?></td>
+                    <td style="white-space:nowrap">
+                        <button class="link" type="button" onclick='openCred(<?= json_encode(["id"=>(int)$cr["id"],"name"=>$cr["name"],"cost_type"=>$cr["cost_type"],"cost_account"=>$cr["cost_account"],"openai_project_id"=>$cr["openai_project_id"],"secret_hint"=>$cr["secret_hint"]], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
+                        <?php if (can_manage()): ?><form method="post" style="display:inline" onsubmit="return confirm('キー「<?= h($cr['name']) ?>」を削除しますか？（このキーを使っている箱/プロダクトは未選択に戻ります）')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_credential"><input type="hidden" name="credential_id" value="<?= (int) $cr['id'] ?>"><button class="link danger" type="submit">削除</button></form><?php endif; ?>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+        <?php else: ?><p class="hint" style="margin:4px 0">まだ登録されていません。</p><?php endif; ?>
+        <?php if (!encryption_ready()): ?><p class="hint" style="color:#92400e">⚠ APP_ENCRYPTION_KEY が未設定のため、キーの値は保存できません（config.local.php に設定してください）。</p><?php endif; ?>
+        <button class="btn" type="button" onclick="openCred({})" style="margin-top:6px"><?= icon('plus', 15) ?> キーを追加</button>
+    </details>
+    <?php endif; ?>
     <?php if ($projects): ?>
     <details class="stat" style="width:100%;margin-bottom:10px">
         <summary style="cursor:pointer;font-weight:600"><?= icon('box') ?> プロジェクト箱の一覧・管理（<?= count($projects) ?>）</summary>
@@ -1729,10 +1904,10 @@ if ($route === 'product'):
                     <td><?= $cnt ?> <span class="muted">URL</span></td>
                     <?php if ($editable): ?>
                     <td style="white-space:nowrap">
-                        <?php if (($p['cost_type'] ?? '') !== '' || trim((string) $p['openai_project_id']) !== ''): ?>
+                        <?php if (($p['cost_type'] ?? '') !== '' || trim((string) $p['openai_project_id']) !== '' || ($p['credential_id'] ?? null) || isset($prodCredSet[(string) ($p['product'] ?? '')])): ?>
                         <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="fetch_project_cost"><input type="hidden" name="project_id" value="<?= (int) $p['id'] ?>"><button class="link" type="submit"><?= icon('refresh', 15) ?> コスト</button></form>
                         <?php endif; ?>
-                        <button class="link" type="button" onclick='openProject(<?= json_encode(["id"=>(int)$p["id"],"name"=>$p["name"],"product"=>$p["product"] ?? "","cost_type"=>$p["cost_type"] ?? "","cost_account"=>$p["cost_account"] ?? "","openai_project_id"=>$p["openai_project_id"],"secret_hint"=>$p["secret_hint"],"monthly_cost"=>$p["monthly_cost"],"currency"=>$p["currency"]], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
+                        <button class="link" type="button" onclick='openProject(<?= json_encode(["id"=>(int)$p["id"],"name"=>$p["name"],"product"=>$p["product"] ?? "","cost_type"=>$p["cost_type"] ?? "","cost_account"=>$p["cost_account"] ?? "","openai_project_id"=>$p["openai_project_id"],"secret_hint"=>$p["secret_hint"],"monthly_cost"=>$p["monthly_cost"],"currency"=>$p["currency"],"credential_id"=>$p["credential_id"] ?? null], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
                         <form method="post" style="display:inline" onsubmit="return confirm('箱「<?= h($p['name']) ?>」を削除しますか？（URLは未割当へ）')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_project"><input type="hidden" name="project_id" value="<?= (int) $p['id'] ?>"><button class="link danger" type="submit">削除</button></form>
                     </td>
                     <?php endif; ?>
@@ -1810,10 +1985,10 @@ if ($route === 'product'):
                 <td class="cost"><?= $boxMoney ?></td>
                 <td class="hide-sm" style="white-space:nowrap" onclick="event.stopPropagation()">
                     <?php if ($editable && $proj): ?>
-                        <?php if (($proj['cost_type'] ?? '') !== '' || trim((string) $proj['openai_project_id']) !== ''): ?>
+                        <?php if (($proj['cost_type'] ?? '') !== '' || trim((string) $proj['openai_project_id']) !== '' || ($proj['credential_id'] ?? null) || isset($prodCredSet[(string) ($proj['product'] ?? '')])): ?>
                         <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="fetch_project_cost"><input type="hidden" name="project_id" value="<?= (int) $proj['id'] ?>"><button class="link" type="submit" title="コスト取得"><?= icon('refresh', 15) ?> コスト</button></form>
                         <?php endif; ?>
-                        <button class="link" type="button" onclick='openProject(<?= json_encode(["id"=>(int)$proj["id"],"name"=>$proj["name"],"product"=>$proj["product"],"cost_type"=>$proj["cost_type"] ?? "","cost_account"=>$proj["cost_account"] ?? "","openai_project_id"=>$proj["openai_project_id"],"secret_hint"=>$proj["secret_hint"],"monthly_cost"=>$proj["monthly_cost"],"currency"=>$proj["currency"]], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>箱を編集</button>
+                        <button class="link" type="button" onclick='openProject(<?= json_encode(["id"=>(int)$proj["id"],"name"=>$proj["name"],"product"=>$proj["product"],"cost_type"=>$proj["cost_type"] ?? "","cost_account"=>$proj["cost_account"] ?? "","openai_project_id"=>$proj["openai_project_id"],"secret_hint"=>$proj["secret_hint"],"monthly_cost"=>$proj["monthly_cost"],"currency"=>$proj["currency"],"credential_id"=>$proj["credential_id"] ?? null], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>箱を編集</button>
                         <form method="post" style="display:inline" onsubmit="return confirm('箱「<?= h($proj['name']) ?>」を削除しますか？（URLは未割当に戻ります）')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_project"><input type="hidden" name="project_id" value="<?= (int) $proj['id'] ?>"><button class="link danger" type="submit">箱削除</button></form>
                     <?php endif; ?>
                 </td>
@@ -1851,7 +2026,7 @@ if ($route === 'product'):
 </div>
 <div id="abtToast"></div>
 
-<?php render_modals($csrf, $names); ?>
+<?php render_modals($csrf, $names, $credentials); ?>
 <script>
     // ---- ドラッグ＆ドロップ並べ替え（PC、リロードなし） ----
     const ABT_CSRF = '<?= h($csrf) ?>';
