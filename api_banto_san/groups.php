@@ -193,6 +193,8 @@ function gstyles(): void { ?>
 <style>
     :root{--bg:#f5f6f8;--card:#fff;--line:#e3e6ea;--ink:#1f2733;--muted:#8a93a0;--accent:#2563eb;--accent-d:#1d4ed8;--ok-bg:#e7f6ec;--ok-ink:#1a7f43;--err-bg:#fdecec;--err-ink:#b42318;}
     *{box-sizing:border-box;}
+    .ic{vertical-align:-0.16em;}
+    header.app h1 .ic{vertical-align:-0.18em;}
     body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP",Meiryo,sans-serif;line-height:1.6;}
     header.app{background:#0f172a;color:#fff;padding:12px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
     header.app h1{font-size:18px;margin:0;font-weight:700;}
@@ -233,10 +235,10 @@ function gstyles(): void { ?>
 </head>
 <body>
 <header class="app">
-    <h1>🛡️ <?= h(APP_NAME) ?></h1>
+    <h1><?= icon('shield', 20) ?> <?= h(APP_NAME) ?></h1>
     <span style="font-size:13px;color:#94a3b8">グループ管理</span>
     <span class="spacer"></span>
-    <a class="navlink" href="index.php">← ダッシュボードへ</a>
+    <a class="navlink" href="index.php"><?= icon('left', 14) ?> ダッシュボードへ</a>
     <span style="font-size:13px;color:#cbd5e1"><?= h($user['name'] ?: $user['email']) ?></span>
     <a class="navlink" href="<?= h(app_url('logout')) ?>">ログアウト</a>
 </header>

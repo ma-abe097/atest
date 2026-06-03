@@ -834,8 +834,13 @@ function render_styles(): void { ?>
     tr.group-head td { background:#f4f7ff; color:#1e293b; }
     tr.group-head:hover td { background:#e9efff; }
     tr.group-head strong { font-size:15px; }
-    .caret { display:inline-block; width:1em; color:#475569; }
-    .drag-handle { cursor:grab; color:#94a3b8; margin-right:4px; user-select:none; }
+    .caret { display:inline-flex; align-items:center; color:#475569; }
+    .caret .ic { transition:transform .15s ease; }
+    .caret.open .ic { transform:rotate(90deg); }
+    .ic { vertical-align:-0.16em; flex:0 0 auto; }
+    button .ic, a.btn .ic, .link .ic, .product-link .ic { vertical-align:-0.18em; }
+    .sidebar a.nav .ic, .sidebar .brand .ic { vertical-align:-0.22em; }
+    .drag-handle { cursor:grab; color:#94a3b8; margin-right:4px; user-select:none; display:inline-flex; align-items:center; }
     tr.group-head.dragging td { opacity:.4; }
     tr.group-head[draggable="true"] { cursor:grab; }
     tr.group-head.drop-before td { box-shadow: inset 0 3px 0 0 var(--accent); }
@@ -904,7 +909,7 @@ function render_login_page(): void
 <title><?= h(APP_NAME) ?> — ログイン</title>
 <?php render_styles(); ?>
 </head><body>
-<header class="app"><h1>🛡️ <?= h(APP_NAME) ?></h1><span class="tag">API棚卸しダッシュボード</span></header>
+<header class="app"><h1><?= icon('shield', 20) ?> <?= h(APP_NAME) ?></h1><span class="tag">API棚卸しダッシュボード</span></header>
 <div class="wrap">
     <?php if ($flashMsg): ?><div class="flash <?= h($flashMsg[0]) ?>"><?= nl2br(h($flashMsg[1])) ?></div><?php endif; ?>
     <div class="login-box">
@@ -951,9 +956,9 @@ function render_tokens_page(array $user): void
 <?php render_styles(); ?>
 </head><body>
 <header class="app">
-    <h1>🛡️ <?= h(APP_NAME) ?></h1><span class="tag">個人用トークン</span>
+    <h1><?= icon('shield', 20) ?> <?= h(APP_NAME) ?></h1><span class="tag">個人用トークン</span>
     <span class="spacer"></span>
-    <a class="navlink" href="index.php">← ダッシュボードへ</a>
+    <a class="navlink" href="index.php"><?= icon('left', 14) ?> ダッシュボードへ</a>
     <a class="navlink" href="<?= h(app_url('logout')) ?>">ログアウト</a>
 </header>
 <div class="wrap" style="max-width:760px">
@@ -1032,9 +1037,9 @@ function render_scan_page(array $user, array $group, int $gid): void
 <?php render_styles(); ?>
 </head><body>
 <header class="app">
-    <h1>🛡️ <?= h(APP_NAME) ?></h1><span class="tag">スキャン — <?= h($group['name']) ?></span>
+    <h1><?= icon('shield', 20) ?> <?= h(APP_NAME) ?></h1><span class="tag">スキャン — <?= h($group['name']) ?></span>
     <span class="spacer"></span>
-    <a class="navlink" href="index.php">← ダッシュボードへ</a>
+    <a class="navlink" href="index.php"><?= icon('left', 14) ?> ダッシュボードへ</a>
     <a class="navlink" href="<?= h(app_url('logout')) ?>">ログアウト</a>
 </header>
 <div class="wrap" style="max-width:780px">
@@ -1048,7 +1053,7 @@ function render_scan_page(array $user, array $group, int $gid): void
     <div class="stat" style="width:100%;margin-bottom:14px;<?= encryption_ready() ? 'background:#f0fdf4;border-color:#86efac' : 'background:#fff4e0;border-color:#facc15' ?>">
         <label style="display:flex;align-items:center;gap:8px;font-weight:600;<?= encryption_ready() ? '' : 'color:#92400e' ?>">
             <input type="checkbox" id="withSecretsToggle" style="width:auto" <?= encryption_ready() ? '' : 'disabled' ?>>
-            🔐 .env等に書かれた「キーの値」も暗号化して取り込む（コスト自動取得用）
+            <?= icon('lock', 15) ?> .env等に書かれた「キーの値」も暗号化して取り込む（コスト自動取得用）
         </label>
         <div class="hint" style="margin-top:4px">
             <?= encryption_ready()
@@ -1216,12 +1221,12 @@ if ($route === 'product'):
 <body>
 <div class="layout">
 <aside class="sidebar">
-    <div class="brand">🛡️ <?= h(APP_NAME) ?></div>
+    <div class="brand"><?= icon('shield', 20) ?> <?= h(APP_NAME) ?></div>
     <div class="navlabel">メニュー</div>
-    <a class="nav" href="index.php">📊 ダッシュボード</a>
-    <?php if (can_manage()): ?><a class="nav" href="<?= h(app_url('scan')) ?>">🔍 スキャン</a><?php endif; ?>
-    <a class="nav" href="<?= h(app_url('tokens')) ?>">🔑 トークン</a>
-    <a class="nav" href="groups.php">👥 グループ管理</a>
+    <a class="nav" href="index.php"><?= icon('dashboard') ?> ダッシュボード</a>
+    <?php if (can_manage()): ?><a class="nav" href="<?= h(app_url('scan')) ?>"><?= icon('search') ?> スキャン</a><?php endif; ?>
+    <a class="nav" href="<?= h(app_url('tokens')) ?>"><?= icon('key') ?> トークン</a>
+    <a class="nav" href="groups.php"><?= icon('users') ?> グループ管理</a>
     <div class="navlabel">アカウント</div>
     <div class="who">
         <?php if ($user['avatar_url']): ?><img src="<?= h($user['avatar_url']) ?>" alt=""><?php endif; ?>
@@ -1230,12 +1235,12 @@ if ($route === 'product'):
             <div class="role-badge"><?= h(ROLES[$role] ?? $role) ?></div>
         </div>
     </div>
-    <a class="nav" href="<?= h(app_url('logout')) ?>">🚪 ログアウト</a>
+    <a class="nav" href="<?= h(app_url('logout')) ?>"><?= icon('logout') ?> ログアウト</a>
 </aside>
 <main class="main">
     <div class="crumb"><a href="index.php">ダッシュボード</a> ／ <?= h($pname) ?></div>
     <div class="topbar">
-        <h2>🔷 <?= h($pname) ?><?php if ($pprovider): ?> <span class="muted" style="font-size:14px">（<?= h($pprovider) ?>）</span><?php endif; ?></h2>
+        <h2><?= icon('product') ?> <?= h($pname) ?><?php if ($pprovider): ?> <span class="muted" style="font-size:14px">（<?= h($pprovider) ?>）</span><?php endif; ?></h2>
     </div>
 
     <!-- ヒーロー：合計＋箱別ドーナツ -->
@@ -1261,7 +1266,7 @@ if ($route === 'product'):
                     <?php if ($bsegs): $dc = donut_colors(); $di = 0; foreach ($bsegs as $s): if ($di >= 6) { break; } ?>
                         <div class="leg">
                             <span class="dot" style="background:<?= h($dc[$di % count($dc)]) ?>"></span>
-                            <span class="leg-name">📦 <?= h($s['label']) ?></span>
+                            <span class="leg-name"><?= icon('box') ?> <?= h($s['label']) ?></span>
                             <span class="leg-pct"><?= $bTot > 0 ? round($s['value'] / $bTot * 100) : 0 ?>%</span>
                         </div>
                     <?php $di++; endforeach;
@@ -1278,7 +1283,7 @@ if ($route === 'product'):
             <h3>プロジェクト箱の月額</h3>
             <?php if ($bsegs): $dc = donut_colors(); foreach ($bsegs as $i => $s): ?>
                 <div class="bar-row">
-                    <span class="nm">📦 <?= h($s['label']) ?></span>
+                    <span class="nm"><?= icon('box') ?> <?= h($s['label']) ?></span>
                     <span class="bar-track"><span class="bar-fill" style="width:<?= $bTot > 0 ? round($s['value'] / $bTot * 100, 1) : 0 ?>%;background:<?= h($dc[$i % count($dc)]) ?>"></span></span>
                     <span class="v"><?= number_format($s['value'], (fmod($s['value'],1.0)===0.0)?0:2) ?></span>
                 </div>
@@ -1291,7 +1296,7 @@ if ($route === 'product'):
             <h3>サイト別 利用箇所（URL数）</h3>
             <?php if ($siteCount): $dc = donut_colors(); $si = 0; foreach ($siteCount as $st => $cnt): ?>
                 <div class="bar-row">
-                    <span class="nm">🌐 <?= h($st) ?></span>
+                    <span class="nm"><?= icon('globe', 15) ?> <?= h($st) ?></span>
                     <span class="bar-track"><span class="bar-fill" style="width:<?= round($cnt / $siteMax * 100, 1) ?>%;background:<?= h($dc[$si % count($dc)]) ?>"></span></span>
                     <span class="v"><?= (int) $cnt ?></span>
                 </div>
@@ -1309,27 +1314,27 @@ if ($route === 'product'):
             <tbody>
             <?php foreach ($boxList as $bl): $b = $bl['box']; ?>
                 <tr class="group-head">
-                    <td>📦 <strong><?= h($b['name']) ?></strong> <span class="muted">（<?= count($bl['urls']) ?> URL）</span></td>
+                    <td><?= icon('box') ?> <strong><?= h($b['name']) ?></strong> <span class="muted">（<?= count($bl['urls']) ?> URL）</span></td>
                     <td class="muted"><?= h(implode('、', array_slice(array_map('strval', $bl['sites']), 0, 4))) ?><?= count($bl['sites']) > 4 ? ' ほか' : '' ?></td>
                     <td class="cost"><?= fmt_money($b['monthly_cost'] === null ? null : (float) $b['monthly_cost'], $b['currency'] ?: 'USD') ?><?php if (($b['balance'] ?? null) !== null): ?><div class="hint">残高 <?= h($b['currency'] ?: 'USD') ?> <?= number_format((float) $b['balance'], 2) ?></div><?php endif; ?></td>
                 </tr>
                 <?php foreach ($bl['urls'] as $f): ?>
                 <tr>
-                    <td style="padding-left:28px"><?= $f['is_key'] ? '🔑' : '📄' ?> <code><?= h($f['file']) ?><?= $f['line'] !== null ? ':' . (int) $f['line'] : '' ?></code></td>
-                    <td class="muted">🌐 <?= h(usage_site($f)) ?></td>
+                    <td style="padding-left:28px"><?= $f['is_key'] ? icon('key', 15) : icon('file', 15) ?> <code><?= h($f['file']) ?><?= $f['line'] !== null ? ':' . (int) $f['line'] : '' ?></code></td>
+                    <td class="muted"><?= icon('globe', 15) ?> <?= h(usage_site($f)) ?></td>
                     <td></td>
                 </tr>
                 <?php endforeach; ?>
             <?php endforeach; ?>
             <?php if ($punassigned): $uurls = dedup_urls($punassigned); ?>
                 <tr class="group-head">
-                    <td>📦 <strong>未割当</strong> <span class="muted">（<?= count($uurls) ?> URL）</span></td>
+                    <td><?= icon('box') ?> <strong>未割当</strong> <span class="muted">（<?= count($uurls) ?> URL）</span></td>
                     <td class="muted">—</td><td class="cost">—</td>
                 </tr>
                 <?php foreach ($uurls as $f): ?>
                 <tr>
-                    <td style="padding-left:28px"><?= $f['is_key'] ? '🔑' : '📄' ?> <code><?= h($f['file']) ?><?= $f['line'] !== null ? ':' . (int) $f['line'] : '' ?></code></td>
-                    <td class="muted">🌐 <?= h(usage_site($f)) ?></td>
+                    <td style="padding-left:28px"><?= $f['is_key'] ? icon('key', 15) : icon('file', 15) ?> <code><?= h($f['file']) ?><?= $f['line'] !== null ? ':' . (int) $f['line'] : '' ?></code></td>
+                    <td class="muted"><?= icon('globe', 15) ?> <?= h(usage_site($f)) ?></td>
                     <td></td>
                 </tr>
                 <?php endforeach; ?>
@@ -1341,7 +1346,7 @@ if ($route === 'product'):
         </table>
     </div>
 
-    <a class="btn" href="index.php">← ダッシュボードに戻る</a>
+    <a class="btn" href="index.php"><?= icon('left', 15) ?> ダッシュボードに戻る</a>
 </main>
 </div>
 </body></html>
@@ -1357,12 +1362,12 @@ if ($route === 'product'):
 <body>
 <div class="layout">
 <aside class="sidebar">
-    <div class="brand">🛡️ <?= h(APP_NAME) ?></div>
+    <div class="brand"><?= icon('shield', 20) ?> <?= h(APP_NAME) ?></div>
     <div class="navlabel">メニュー</div>
-    <a class="nav active" href="index.php">📊 ダッシュボード</a>
-    <?php if (can_manage()): ?><a class="nav" href="<?= h(app_url('scan')) ?>">🔍 スキャン</a><?php endif; ?>
-    <a class="nav" href="<?= h(app_url('tokens')) ?>">🔑 トークン</a>
-    <a class="nav" href="groups.php">👥 グループ管理</a>
+    <a class="nav active" href="index.php"><?= icon('dashboard') ?> ダッシュボード</a>
+    <?php if (can_manage()): ?><a class="nav" href="<?= h(app_url('scan')) ?>"><?= icon('search') ?> スキャン</a><?php endif; ?>
+    <a class="nav" href="<?= h(app_url('tokens')) ?>"><?= icon('key') ?> トークン</a>
+    <a class="nav" href="groups.php"><?= icon('users') ?> グループ管理</a>
     <div class="navlabel">アカウント</div>
     <div class="who">
         <?php if ($user['avatar_url']): ?><img src="<?= h($user['avatar_url']) ?>" alt=""><?php endif; ?>
@@ -1371,7 +1376,7 @@ if ($route === 'product'):
             <div class="role-badge"><?= h(ROLES[$role] ?? $role) ?></div>
         </div>
     </div>
-    <a class="nav" href="<?= h(app_url('logout')) ?>">🚪 ログアウト</a>
+    <a class="nav" href="<?= h(app_url('logout')) ?>"><?= icon('logout') ?> ログアウト</a>
 </aside>
 <main class="main">
     <div class="topbar">
@@ -1438,7 +1443,7 @@ if ($route === 'product'):
 
     <?php if (can_manage() && !encryption_ready()): ?>
         <div class="flash" style="background:#fff4e0;color:#92400e">
-            🔐 コスト自動取得に向けて<strong>キーの暗号化保存</strong>を使うには、<code>config.local.php</code> に <code>APP_ENCRYPTION_KEY</code> を設定してください。<br>
+            <?= icon('lock', 15) ?> コスト自動取得に向けて<strong>キーの暗号化保存</strong>を使うには、<code>config.local.php</code> に <code>APP_ENCRYPTION_KEY</code> を設定してください。<br>
             <span class="hint">生成: サーバーで <code>php -r "echo base64_encode(random_bytes(32)).PHP_EOL;"</code> を実行し、出た文字列を設定。</span>
         </div>
     <?php endif; ?>
@@ -1484,7 +1489,7 @@ if ($route === 'product'):
         <a class="btn" href="index.php">クリア</a>
         <span class="spacer"></span>
         <?php if ($editable): ?>
-            <button type="button" class="primary" onclick="openCreate()">＋ API を追加</button>
+            <button type="button" class="primary" onclick="openCreate()"><?= icon('plus', 15) ?> API を追加</button>
         <?php endif; ?>
     </form>
 
@@ -1499,7 +1504,7 @@ if ($route === 'product'):
         <select id="moveTargetSel" onchange="document.getElementById('moveNew').style.display=this.value==='new'?'flex':'none'">
             <option value="unassign">（未割当に戻す）</option>
             <?php foreach ($projects as $p): ?>
-                <option value="<?= (int) $p['id'] ?>">📦 <?= h($p['name']) ?><?= $p['openai_project_id'] !== '' ? '（' . h($p['openai_project_id']) . '）' : '' ?></option>
+                <option value="<?= (int) $p['id'] ?>"><?= h($p['name']) ?><?= $p['openai_project_id'] !== '' ? '（' . h($p['openai_project_id']) . '）' : '' ?></option>
             <?php endforeach; ?>
             <option value="new">＋ 新しい箱を作る…</option>
         </select>
@@ -1511,25 +1516,25 @@ if ($route === 'product'):
         <span id="moveCount" class="hint"></span>
         <span class="spacer"></span>
         <label class="hint" style="white-space:nowrap"><input type="checkbox" onchange="selAllGlobal(this)" style="width:auto"> 表示中の全URL選択</label>
-        <button class="btn" type="button" onclick="openProject({})">＋ 箱を追加</button>
+        <button class="btn" type="button" onclick="openProject({})"><?= icon('plus', 15) ?> 箱を追加</button>
     </div>
     <?php endif; ?>
     <?php if ($projects): ?>
     <details class="stat" style="width:100%;margin-bottom:10px" <?= $editable ? 'open' : '' ?>>
-        <summary style="cursor:pointer;font-weight:600">📦 プロジェクト箱の一覧・管理（<?= count($projects) ?>）</summary>
+        <summary style="cursor:pointer;font-weight:600"><?= icon('box') ?> プロジェクト箱の一覧・管理（<?= count($projects) ?>）</summary>
         <table style="margin-top:8px">
             <thead><tr><th>箱</th><th>OpenAI proj</th><th>月額</th><th>URL数</th><?php if ($editable): ?><th>操作</th><?php endif; ?></tr></thead>
             <tbody>
             <?php foreach ($projects as $p): $cnt = $boxUrlCount[(int) $p['id']] ?? 0; ?>
                 <tr>
-                    <td>📦 <strong><?= h($p['name']) ?></strong></td>
+                    <td><?= icon('box') ?> <strong><?= h($p['name']) ?></strong></td>
                     <td class="muted"><?= $p['openai_project_id'] !== '' ? h($p['openai_project_id']) : '—' ?></td>
                     <td class="cost"><?= fmt_money($p['monthly_cost'] === null ? null : (float) $p['monthly_cost'], $p['currency'] ?: 'USD') ?><?php if (($p['balance'] ?? null) !== null): ?><div class="hint">残高 <?= h($p['currency'] ?: 'USD') ?> <?= number_format((float) $p['balance'], 2) ?></div><?php endif; ?></td>
                     <td><?= $cnt ?> <span class="muted">URL</span></td>
                     <?php if ($editable): ?>
                     <td style="white-space:nowrap">
                         <?php if (($p['cost_type'] ?? '') !== '' || trim((string) $p['openai_project_id']) !== ''): ?>
-                        <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="fetch_project_cost"><input type="hidden" name="project_id" value="<?= (int) $p['id'] ?>"><button class="link" type="submit">⟳コスト</button></form>
+                        <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="fetch_project_cost"><input type="hidden" name="project_id" value="<?= (int) $p['id'] ?>"><button class="link" type="submit"><?= icon('refresh', 15) ?> コスト</button></form>
                         <?php endif; ?>
                         <button class="link" type="button" onclick='openProject(<?= json_encode(["id"=>(int)$p["id"],"name"=>$p["name"],"product"=>$p["product"] ?? "","cost_type"=>$p["cost_type"] ?? "","cost_account"=>$p["cost_account"] ?? "","openai_project_id"=>$p["openai_project_id"],"secret_hint"=>$p["secret_hint"],"monthly_cost"=>$p["monthly_cost"],"currency"=>$p["currency"]], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
                         <form method="post" style="display:inline" onsubmit="return confirm('箱「<?= h($p['name']) ?>」を削除しますか？（URLは未割当へ）')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_project"><input type="hidden" name="project_id" value="<?= (int) $p['id'] ?>"><button class="link danger" type="submit">削除</button></form>
@@ -1570,15 +1575,15 @@ if ($route === 'product'):
         ?>
             <tr class="group-head" data-name="<?= h($gname) ?>" data-gi="<?= $gi ?>" onclick="toggleProduct(<?= $gi ?>)"
                 <?= $editable ? 'draggable="true" ondragstart="gDragStart(event,this)" ondragend="gDragEnd(this)" ondragover="gDragOver(event,this)" ondragleave="gDragLeave(this)" ondrop="gDrop(event,this)"' : '' ?>>
-                <td><?php if ($editable): ?><span class="drag-handle" title="ドラッグで並べ替え">⠿</span><?php endif; ?><span id="pc<?= $gi ?>" class="caret">▶</span></td>
-                <td>🔷 <strong><?= h($gname) ?></strong> <?php if ($provider): ?><span class="muted">（<?= h($provider) ?>）</span><?php endif; ?>
-                    <a href="<?= h(app_url('product', ['name' => $gname])) ?>" class="product-link" onclick="event.stopPropagation()">詳細 →</a></td>
+                <td><?php if ($editable): ?><span class="drag-handle" title="ドラッグで並べ替え"><?= icon('grip', 16) ?></span><?php endif; ?><span id="pc<?= $gi ?>" class="caret"><?= icon('chevron', 16) ?></span></td>
+                <td><?= icon('product') ?> <strong><?= h($gname) ?></strong> <?php if ($provider): ?><span class="muted">（<?= h($provider) ?>）</span><?php endif; ?>
+                    <a href="<?= h(app_url('product', ['name' => $gname])) ?>" class="product-link" onclick="event.stopPropagation()">詳細 <?= icon('right', 14) ?></a></td>
                 <td class="cost group-cost"><?= h($pmoneyStr) ?></td>
                 <td class="hide-sm" style="white-space:nowrap">
                     <span class="muted"><?= $nBoxes ?> 箱 / <?= count($prodSites) ?> サイト</span>
                     <?php if ($editable): ?>
-                        <form method="post" style="display:inline" onclick="event.stopPropagation()"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="reorder"><input type="hidden" name="name" value="<?= h($gname) ?>"><input type="hidden" name="dir" value="up"><button class="link" type="submit" title="上へ">▲</button></form>
-                        <form method="post" style="display:inline" onclick="event.stopPropagation()"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="reorder"><input type="hidden" name="name" value="<?= h($gname) ?>"><input type="hidden" name="dir" value="down"><button class="link" type="submit" title="下へ">▼</button></form>
+                        <form method="post" style="display:inline" onclick="event.stopPropagation()"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="reorder"><input type="hidden" name="name" value="<?= h($gname) ?>"><input type="hidden" name="dir" value="up"><button class="link" type="submit" title="上へ"><?= icon('up', 15) ?></button></form>
+                        <form method="post" style="display:inline" onclick="event.stopPropagation()"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="reorder"><input type="hidden" name="name" value="<?= h($gname) ?>"><input type="hidden" name="dir" value="down"><button class="link" type="submit" title="下へ"><?= icon('down', 15) ?></button></form>
                     <?php endif; ?>
                 </td>
             </tr>
@@ -1587,7 +1592,7 @@ if ($route === 'product'):
                 <td></td>
                 <td colspan="3"><span class="hint">サイトごと移動: </span>
                     <?php foreach (array_keys($prodSites) as $s): ?>
-                        <label style="font-size:12px;margin-right:8px;white-space:nowrap"><input type="checkbox" class="siteChk" value="<?= h($s) ?>" onchange="updMoveCount()" style="width:auto"> 🌐<?= h($s) ?></label>
+                        <label style="font-size:12px;margin-right:8px;white-space:nowrap"><input type="checkbox" class="siteChk" value="<?= h($s) ?>" onchange="updMoveCount()" style="width:auto"> <?= icon('globe', 15) ?> <?= h($s) ?></label>
                     <?php endforeach; ?>
                 </td>
             </tr>
@@ -1600,17 +1605,17 @@ if ($route === 'product'):
             foreach ($renderBoxes as $rb): $pj++;
             $proj = $rb['proj'];
             $urls = dedup_urls($rb['usages']);
-            $boxLabel = $proj ? ('📦 ' . $proj['name'] . ($proj['openai_project_id'] !== '' ? '（' . $proj['openai_project_id'] . '）' : '')) : '📦 未割当';
+            $boxLabel = $proj ? ($proj['name'] . ($proj['openai_project_id'] !== '' ? '（' . $proj['openai_project_id'] . '）' : '')) : '未割当';
             $boxMoney = $proj ? fmt_money($proj['monthly_cost'] === null ? null : (float) $proj['monthly_cost'], $proj['currency'] ?: 'USD') : '—';
         ?>
             <tr class="prod<?= $gi ?> p<?= $gi ?>-proj" style="display:none">
-                <td style="text-align:right"><span id="jc<?= $gi ?>_<?= $pj ?>" class="caret" onclick="toggleProj(<?= $gi ?>,<?= $pj ?>)" style="cursor:pointer">▶</span></td>
-                <td style="padding-left:24px"><?= h($boxLabel) ?> <span class="muted">（<?= count($urls) ?> URL）</span><?php if ($proj && ($proj['balance'] ?? null) !== null): ?> <span class="muted">｜残高 <?= h($proj['currency'] ?: 'USD') ?> <?= number_format((float) $proj['balance'], 2) ?></span><?php endif; ?></td>
+                <td style="text-align:right"><span id="jc<?= $gi ?>_<?= $pj ?>" class="caret" onclick="toggleProj(<?= $gi ?>,<?= $pj ?>)" style="cursor:pointer"><?= icon('chevron', 16) ?></span></td>
+                <td style="padding-left:24px"><?= icon('box') ?> <?= h($boxLabel) ?> <span class="muted">（<?= count($urls) ?> URL）</span><?php if ($proj && ($proj['balance'] ?? null) !== null): ?> <span class="muted">｜残高 <?= h($proj['currency'] ?: 'USD') ?> <?= number_format((float) $proj['balance'], 2) ?></span><?php endif; ?></td>
                 <td class="cost"><?= $boxMoney ?></td>
                 <td class="hide-sm" style="white-space:nowrap" onclick="event.stopPropagation()">
                     <?php if ($editable && $proj): ?>
                         <?php if (($proj['cost_type'] ?? '') !== '' || trim((string) $proj['openai_project_id']) !== ''): ?>
-                        <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="fetch_project_cost"><input type="hidden" name="project_id" value="<?= (int) $proj['id'] ?>"><button class="link" type="submit" title="コスト取得">⟳コスト</button></form>
+                        <form method="post" style="display:inline"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="fetch_project_cost"><input type="hidden" name="project_id" value="<?= (int) $proj['id'] ?>"><button class="link" type="submit" title="コスト取得"><?= icon('refresh', 15) ?> コスト</button></form>
                         <?php endif; ?>
                         <button class="link" type="button" onclick='openProject(<?= json_encode(["id"=>(int)$proj["id"],"name"=>$proj["name"],"product"=>$proj["product"],"cost_type"=>$proj["cost_type"] ?? "","cost_account"=>$proj["cost_account"] ?? "","openai_project_id"=>$proj["openai_project_id"],"secret_hint"=>$proj["secret_hint"],"monthly_cost"=>$proj["monthly_cost"],"currency"=>$proj["currency"]], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>箱を編集</button>
                         <form method="post" style="display:inline" onsubmit="return confirm('箱「<?= h($proj['name']) ?>」を削除しますか？（URLは未割当に戻ります）')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_project"><input type="hidden" name="project_id" value="<?= (int) $proj['id'] ?>"><button class="link danger" type="submit">箱削除</button></form>
@@ -1628,10 +1633,10 @@ if ($route === 'product'):
                     ?>
                         <div style="white-space:nowrap">
                             <?php if ($editable): ?><input type="checkbox" class="moveChk" value="<?= (int) $f['id'] ?>" onchange="updMoveCount()" style="width:auto"><?php endif; ?>
-                            <?= $f['is_key'] ? '🔑' : '📄' ?>
-                            <strong>🌐<?= h($fsite) ?></strong>
+                            <?= $f['is_key'] ? icon('key', 15) : icon('file', 15) ?>
+                            <strong><?= icon('globe', 15) ?> <?= h($fsite) ?></strong>
                             <code><?= h($f['file']) ?><?= $f['line'] !== null ? ':' . (int) $f['line'] : '' ?></code>
-                            <button class="link" type="button" title="コピー" onclick="copyText(<?= htmlspecialchars(json_encode($pathStr, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)">📋</button>
+                            <button class="link" type="button" title="コピー" onclick="copyText(<?= htmlspecialchars(json_encode($pathStr, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)"><?= icon('copy', 15) ?></button>
                         </div>
                     <?php endforeach; ?>
                 </td>
@@ -1644,7 +1649,7 @@ if ($route === 'product'):
     <?php endif; ?>
 
     <p class="hint" style="margin-top:18px">
-        ※ コストは⟳取得 or 手入力。一覧ではURLは展開時のみ表示。APIキー本体は保存せず暗号化／鍵の在りかのみ記録します。
+        ※ コストは<?= icon('refresh', 14) ?>取得 or 手入力。一覧ではURLは展開時のみ表示。APIキー本体は保存せず暗号化／鍵の在りかのみ記録します。
     </p>
 </main>
 </div>
@@ -1669,7 +1674,7 @@ if ($route === 'product'):
                 <div class="field"><label>担当 (owner)</label><input name="owner" id="f_owner" placeholder="例: 開発チーム"></div>
                 <div class="field full"><label>鍵の在りか (key_location)</label><input name="key_location" id="f_key" placeholder="例: env: OPENAI_API_KEY"><div class="hint">環境変数名など「在りか」。下の「APIキー(値)」とは別です。</div></div>
                 <div class="field full" style="border-top:1px dashed var(--line);padding-top:10px">
-                    <label>🔐 APIキー（値）— コスト自動取得用</label>
+                    <label><?= icon('lock', 15) ?> APIキー（値）— コスト自動取得用</label>
                     <input type="password" name="secret" id="f_secret" autocomplete="new-password" placeholder="ここにキーの値を貼る（暗号化保存）">
                     <div class="hint" id="f_secret_state"></div>
                     <label style="font-weight:400;font-size:12px;display:inline-flex;align-items:center;gap:4px;margin-top:4px">
@@ -1682,7 +1687,7 @@ if ($route === 'product'):
                 <div class="field full">
                     <label>コスト用プロジェクトID（任意・OpenAI等）</label>
                     <input name="cost_project" id="f_cost_project" placeholder="例: proj_xxxxx（空なら組織全体の合計）">
-                    <div class="hint">⟳コスト時、IDを入れると<strong>そのプロジェクトのみ</strong>、空なら<strong>組織全体の合計</strong>を取得します。OpenAIのプロジェクト設定で確認できます。</div>
+                    <div class="hint"><?= icon('refresh', 15) ?> コスト時、IDを入れると<strong>そのプロジェクトのみ</strong>、空なら<strong>組織全体の合計</strong>を取得します。OpenAIのプロジェクト設定で確認できます。</div>
                 </div>
                 <div class="field"><label>請求ページURL (billing_url)</label><input name="billing_url" id="f_billing" type="url" placeholder="https://..."></div>
                 <div class="field"><label>ドキュメントURL (docs_url)</label><input name="docs_url" id="f_docs" type="url" placeholder="https://..."></div>
@@ -1723,7 +1728,7 @@ if ($route === 'product'):
                 <div class="field full" id="pf_acct_wrap" style="display:none"><label id="pf_acct_label">アカウントID</label><input name="cost_account" id="pf_acct" placeholder="Twilio: Account SID（ACxxxx）"></div>
                 <div class="field"><label>月額（手入力・任意）</label><input name="monthly_cost" id="pf_cost" type="number" step="0.01" min="0" placeholder="自動取得しない場合"></div>
                 <div class="field"><label>通貨</label><select name="currency" id="pf_currency"><?php foreach (['USD','JPY','EUR','GBP'] as $c): ?><option value="<?= $c ?>"><?= $c ?></option><?php endforeach; ?></select></div>
-                <div class="field full"><label>🔐 キー / トークン（コスト取得用・暗号化保存）</label><input type="password" name="secret" id="pf_secret" autocomplete="new-password" placeholder="OpenAI: sk-admin-... / Twilio: Auth Token"><div class="hint" id="pf_secret_state"></div></div>
+                <div class="field full"><label><?= icon('lock', 15) ?> キー / トークン（コスト取得用・暗号化保存）</label><input type="password" name="secret" id="pf_secret" autocomplete="new-password" placeholder="OpenAI: sk-admin-... / Twilio: Auth Token"><div class="hint" id="pf_secret_state"></div></div>
             </div>
         </div>
         <div class="modal-foot">
@@ -1754,7 +1759,7 @@ if ($route === 'product'):
         document.getElementById('pf_cost').value = (p.monthly_cost === null || p.monthly_cost === undefined) ? '' : p.monthly_cost;
         document.getElementById('pf_currency').value = p.currency || 'USD';
         document.getElementById('pf_secret').value = '';
-        document.getElementById('pf_secret_state').textContent = p.secret_hint ? ('現在: 🔐 ' + p.secret_hint + '（変更時のみ入力）') : 'Adminキー未保存';
+        document.getElementById('pf_secret_state').textContent = p.secret_hint ? ('現在: ' + p.secret_hint + '（変更時のみ入力）') : 'Adminキー未保存';
         projDialog.showModal();
     }
     const dialog = document.getElementById('apiDialog');
@@ -1788,7 +1793,7 @@ if ($route === 'product'):
         document.getElementById('f_secret').value    = '';
         document.getElementById('f_secret_clear').checked = false;
         document.getElementById('f_secret_state').textContent =
-            a.secret_hint ? ('現在: 🔐 ' + a.secret_hint + '（変更する時だけ入力）') : 'キー未保存';
+            a.secret_hint ? ('現在: ' + a.secret_hint + '（変更する時だけ入力）') : 'キー未保存';
         dialog.showModal();
     }
 </script>
@@ -1893,20 +1898,20 @@ if ($route === 'product'):
     // プロダクト展開 → プロジェクト行を表示（閉じる時はファイルも畳む）
     function toggleProduct(gi) {
         const caret = document.getElementById('pc' + gi);
-        const open = caret.textContent === '▶';
+        const open = !caret.classList.contains('open');
         document.querySelectorAll('.p' + gi + '-proj').forEach(r => r.style.display = open ? 'table-row' : 'none');
-        caret.textContent = open ? '▼' : '▶';
+        caret.classList.toggle('open', open);
         if (!open) {
             document.querySelectorAll('.prod' + gi + '[class*="-file"]').forEach(r => r.style.display = 'none');
-            document.querySelectorAll('[id^="jc' + gi + '_"]').forEach(c => c.textContent = '▶');
+            document.querySelectorAll('[id^="jc' + gi + '_"]').forEach(c => c.classList.remove('open'));
         }
     }
     // プロジェクト展開 → そのキーファイル行を表示
     function toggleProj(gi, pj) {
         const caret = document.getElementById('jc' + gi + '_' + pj);
-        const open = caret.textContent === '▶';
+        const open = !caret.classList.contains('open');
         document.querySelectorAll('.p' + gi + 'j' + pj + '-file').forEach(r => r.style.display = open ? 'table-row' : 'none');
-        caret.textContent = open ? '▼' : '▶';
+        caret.classList.toggle('open', open);
     }
 </script>
 </body>
