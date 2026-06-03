@@ -1185,7 +1185,7 @@ function render_scan_page(array $user, array $group, int $gid): void
                 <tr>
                     <td>📦 <strong><?= h($p['name']) ?></strong></td>
                     <td class="muted"><?= $p['openai_project_id'] !== '' ? h($p['openai_project_id']) : '—' ?></td>
-                    <td class="cost"><?= fmt_money($p['monthly_cost'] === null ? null : (float) $p['monthly_cost'], $p['currency'] ?: 'USD') ?></td>
+                    <td class="cost"><?= fmt_money($p['monthly_cost'] === null ? null : (float) $p['monthly_cost'], $p['currency'] ?: 'USD') ?><?php if (($p['balance'] ?? null) !== null): ?><div class="hint">残高 <?= h($p['currency'] ?: 'USD') ?> <?= number_format((float) $p['balance'], 2) ?></div><?php endif; ?></td>
                     <td><?= $cnt ?> <span class="muted">URL</span></td>
                     <?php if ($editable): ?>
                     <td style="white-space:nowrap">
@@ -1265,7 +1265,7 @@ function render_scan_page(array $user, array $group, int $gid): void
         ?>
             <tr class="prod<?= $gi ?> p<?= $gi ?>-proj" style="display:none">
                 <td style="text-align:right"><span id="jc<?= $gi ?>_<?= $pj ?>" class="caret" onclick="toggleProj(<?= $gi ?>,<?= $pj ?>)" style="cursor:pointer">▶</span></td>
-                <td style="padding-left:24px"><?= h($boxLabel) ?> <span class="muted">（<?= count($urls) ?> URL）</span></td>
+                <td style="padding-left:24px"><?= h($boxLabel) ?> <span class="muted">（<?= count($urls) ?> URL）</span><?php if ($proj && ($proj['balance'] ?? null) !== null): ?> <span class="muted">｜残高 <?= h($proj['currency'] ?: 'USD') ?> <?= number_format((float) $proj['balance'], 2) ?></span><?php endif; ?></td>
                 <td class="cost"><?= $boxMoney ?></td>
                 <td class="hide-sm" style="white-space:nowrap" onclick="event.stopPropagation()">
                     <?php if ($editable && $proj): ?>

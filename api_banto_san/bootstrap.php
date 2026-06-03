@@ -325,6 +325,7 @@ function db(): PDO
             secret_hint        TEXT,
             secret_fp          TEXT,
             monthly_cost       REAL,
+            balance            REAL,
             currency           TEXT    NOT NULL DEFAULT 'USD',
             created_at         TEXT    NOT NULL,
             updated_at         TEXT    NOT NULL
@@ -367,7 +368,7 @@ function db(): PDO
 
     // projects.product を後付け
     $projCols = array_column($pdo->query('PRAGMA table_info(projects)')->fetchAll(), 'name');
-    foreach (['product' => "TEXT NOT NULL DEFAULT ''", 'cost_type' => "TEXT NOT NULL DEFAULT ''", 'cost_account' => "TEXT NOT NULL DEFAULT ''"] as $col => $def) {
+    foreach (['product' => "TEXT NOT NULL DEFAULT ''", 'cost_type' => "TEXT NOT NULL DEFAULT ''", 'cost_account' => "TEXT NOT NULL DEFAULT ''", 'balance' => 'REAL'] as $col => $def) {
         if (!in_array($col, $projCols, true)) {
             $pdo->exec("ALTER TABLE projects ADD COLUMN $col $def");
         }
@@ -522,6 +523,7 @@ function fetch_project_cost(int $gid, array $project): array
     }
     $secret  = decrypt_secret($project['secret_enc'] ?? null);
     $account = trim((string) ($project['cost_account'] ?? ''));
+    $balance = null;
 
     switch ($type) {
         case 'openai':
@@ -532,13 +534,25 @@ function fetch_project_cost(int $gid, array $project): array
         case 'twilio':
             if ($secret === null) { throw new RuntimeException('Twilioの Auth Token を箱の編集で保存してください。'); }
             $c = cost_twilio($account, $secret);
+            try { $b = twilio_balance($account, $secret); $balance = $b['amount']; if ($c['currency'] === '' && $b['currency'] !== '') { $c['currency'] = $b['currency']; } } catch (Throwable $e) { /* 残高取得失敗は無視 */ }
             break;
         default:
             throw new RuntimeException('この箱のコスト種別が未設定です。編集でコスト種別（OpenAI / Twilio 等）を選んでください。');
     }
-    db()->prepare('UPDATE projects SET monthly_cost = :m, currency = :c, updated_at = :u WHERE id = :id AND group_id = :g')
-        ->execute([':m' => $c['amount'], ':c' => $c['currency'], ':u' => now(), ':id' => (int) $project['id'], ':g' => $gid]);
+    db()->prepare('UPDATE projects SET monthly_cost = :m, currency = :c, balance = COALESCE(:bal, balance), updated_at = :u WHERE id = :id AND group_id = :g')
+        ->execute([':m' => $c['amount'], ':c' => $c['currency'], ':bal' => $balance, ':u' => now(), ':id' => (int) $project['id'], ':g' => $gid]);
+    if ($balance !== null) { $c['note'] = ($c['note'] ?? '') . ' / 残高 ' . $c['currency'] . ' ' . number_format($balance, 2); }
     return $c;
+}
+
+/** Twilio 残高（Balance API）。['amount'=>float,'currency'=>string] */
+function twilio_balance(string $sid, string $token): array
+{
+    $url = 'https://api.twilio.com/2010-04-01/Accounts/' . rawurlencode($sid) . '/Balance.json';
+    $r = http_request('GET', $url, ['headers' => ['Authorization: Basic ' . base64_encode($sid . ':' . $token)]]);
+    if ($r['status'] !== 200) { throw new RuntimeException('Twilio残高APIエラー (HTTP ' . $r['status'] . ')'); }
+    $d = json_decode($r['body'], true);
+    return ['amount' => (float) ($d['balance'] ?? 0), 'currency' => strtoupper((string) ($d['currency'] ?? 'USD'))];
 }
 
 /** Twilio 当月利用額（Account SID + Auth Token）。Usage Records API。 */
