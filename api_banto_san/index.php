@@ -871,6 +871,18 @@ function render_styles(): void { ?>
     .fab.active { background:var(--gold); color:#3a2a05; box-shadow:0 10px 26px rgba(224,169,59,.45); }
     .fab.active .ic { color:#3a2a05; }
     @media (max-width:560px){ .fab .fab-label{ display:none; } .fab{ padding:14px; } }
+    /* 右端からのドロワー（非モーダル：開いたままページ操作OK） */
+    .drawer { position:fixed; top:0; right:0; height:100vh; width:300px; max-width:86vw; background:var(--card);
+        border-left:1px solid var(--line); box-shadow:-10px 0 30px rgba(15,23,42,.14); z-index:240;
+        transform:translateX(105%); transition:transform .25s ease; display:flex; flex-direction:column; }
+    .drawer.open { transform:translateX(0); }
+    .drawer-head { display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--line); }
+    .drawer-body { padding:14px 16px; overflow:auto; flex:1; }
+    .drawer-body .field { margin-bottom:10px; }
+    .drawer-body .field label { display:block; font-size:12px; color:var(--muted); margin-bottom:4px; }
+    .drawer-body .field input, .drawer-body .field select { width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:8px; font-size:14px; }
+    .drawer-foot { display:flex; justify-content:flex-end; gap:8px; padding:14px 16px; border-top:1px solid var(--line); }
+    @media (max-width:820px){ .drawer { width:280px; } }
     .toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; background:var(--card);
         border:1px solid var(--line); border-radius:var(--radius); padding:12px; margin-bottom:14px; box-shadow:var(--shadow); }
     .toolbar input, .toolbar select { padding:8px 12px; border:1px solid var(--line); border-radius:10px; font-size:14px; }
@@ -1872,29 +1884,41 @@ if ($route === 'product'):
     <?php endif; ?>
 
     <?php $filterActive = ($q !== '' || $filterSite !== '' || $filterProv !== '' || $filterStatus !== ''); ?>
-    <!-- 絞り込み・並び替え（右下の追従ボタンから開く） -->
-    <button type="button" class="fab<?= $filterActive ? ' active' : '' ?>" onclick="document.getElementById('filterDialog').showModal()" title="絞り込み・並び替え">
+    <!-- 絞り込み・並び替え（右下の追従ボタン → 右端からドロワーが出る・非モーダル） -->
+    <button type="button" id="filterFab" class="fab<?= $filterActive ? ' active' : '' ?>" onclick="toggleFilter()" title="絞り込み・並び替え" aria-expanded="false">
         <?= icon('search', 20) ?><span class="fab-label">絞り込み<?= $filterActive ? '（適用中）' : '' ?></span>
     </button>
-    <dialog id="filterDialog">
+    <aside id="filterDrawer" class="drawer" aria-hidden="true">
         <form method="get">
-            <div class="modal-head">絞り込み・並び替え</div>
-            <div class="modal-body">
-                <div class="grid">
-                    <div class="field full"><label>検索</label><input type="search" name="q" value="<?= h($q) ?>" placeholder="API / サイト / キー / メモ で検索"></div>
-                    <div class="field"><label>サイト</label><select name="site"><option value="">すべて</option><?php foreach ($sites as $s): ?><option value="<?= h($s) ?>" <?= $s === $filterSite ? 'selected' : '' ?>><?= h($s) ?></option><?php endforeach; ?></select></div>
-                    <div class="field"><label>provider</label><select name="provider"><option value="">すべて</option><?php foreach ($providers as $p): ?><option value="<?= h($p) ?>" <?= $p === $filterProv ? 'selected' : '' ?>><?= h($p) ?></option><?php endforeach; ?></select></div>
-                    <div class="field"><label>status</label><select name="status"><option value="">すべて</option><?php foreach (STATUSES as $k => $v): ?><option value="<?= h($k) ?>" <?= $k === $filterStatus ? 'selected' : '' ?>><?= h($v) ?></option><?php endforeach; ?></select></div>
-                    <div class="field"><label>並び順</label><select name="sort"><option value="manual" <?= $sort === 'manual' ? 'selected' : '' ?>>手動の並び順</option><option value="cost" <?= $sort === 'cost' ? 'selected' : '' ?>>金額順</option><option value="name" <?= $sort === 'name' ? 'selected' : '' ?>>プロバイダ名順</option></select></div>
-                </div>
+            <div class="drawer-head">
+                <strong>絞り込み・並び替え</strong>
+                <button type="button" class="link" onclick="toggleFilter(false)" title="閉じる"><?= icon('right', 18) ?></button>
             </div>
-            <div class="modal-foot">
+            <div class="drawer-body">
+                <p class="hint" style="margin:0 0 6px">開いたまま一覧をコピーして貼り付けできます。</p>
+                <div class="field"><label>検索</label><input type="search" name="q" value="<?= h($q) ?>" placeholder="API / サイト / キー / メモ"></div>
+                <div class="field"><label>サイト</label><select name="site"><option value="">すべて</option><?php foreach ($sites as $s): ?><option value="<?= h($s) ?>" <?= $s === $filterSite ? 'selected' : '' ?>><?= h($s) ?></option><?php endforeach; ?></select></div>
+                <div class="field"><label>provider</label><select name="provider"><option value="">すべて</option><?php foreach ($providers as $p): ?><option value="<?= h($p) ?>" <?= $p === $filterProv ? 'selected' : '' ?>><?= h($p) ?></option><?php endforeach; ?></select></div>
+                <div class="field"><label>status</label><select name="status"><option value="">すべて</option><?php foreach (STATUSES as $k => $v): ?><option value="<?= h($k) ?>" <?= $k === $filterStatus ? 'selected' : '' ?>><?= h($v) ?></option><?php endforeach; ?></select></div>
+                <div class="field"><label>並び順</label><select name="sort"><option value="manual" <?= $sort === 'manual' ? 'selected' : '' ?>>手動の並び順</option><option value="cost" <?= $sort === 'cost' ? 'selected' : '' ?>>金額順</option><option value="name" <?= $sort === 'name' ? 'selected' : '' ?>>プロバイダ名順</option></select></div>
+            </div>
+            <div class="drawer-foot">
                 <a class="btn" href="index.php">クリア</a>
-                <button type="button" class="btn" onclick="document.getElementById('filterDialog').close()">閉じる</button>
                 <button class="primary" type="submit">適用</button>
             </div>
         </form>
-    </dialog>
+    </aside>
+    <script>
+        function toggleFilter(force) {
+            const d = document.getElementById('filterDrawer'), f = document.getElementById('filterFab');
+            const open = (force === undefined) ? !d.classList.contains('open') : force;
+            d.classList.toggle('open', open);
+            d.setAttribute('aria-hidden', open ? 'false' : 'true');
+            f.setAttribute('aria-expanded', open ? 'true' : 'false');
+            if (open) { const q = d.querySelector('input[name="q"]'); if (q) q.focus(); }
+        }
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') toggleFilter(false); });
+    </script>
 
     <!-- プロダクト → プロジェクト箱 → URL ビュー -->
     <?php if (!$tree): ?>
