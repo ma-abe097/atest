@@ -100,7 +100,7 @@ function jpy_hint(?float $amount, ?string $cur): string
 {
     if ($amount === null) { return ''; }
     if (strtoupper((string) ($cur ?: '')) !== 'USD') { return ''; }
-    return '<span class="jpyhint">（JPY~' . number_format($amount * usd_jpy()) . '）</span>';
+    return '<span class="jpyhint">（JPY≈' . number_format($amount * usd_jpy()) . '）</span>';
 }
 
 /** 許可メールドメインの一覧（未設定なら空＝制限なし） */
