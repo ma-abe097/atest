@@ -25,6 +25,28 @@
         return id;
     };
 
+    /** リスト元媒体名から「申込日：…」等の余分な注記を取り除く */
+    const cleanMediaName = (s) => (s || '').replace(/[\s　]*申込日[：:].*$/, '').trim();
+
+    /** 受注日を YYYY-MM-DD に整える（2026/6/4・2026.6.4・Excelシリアル値などに対応） */
+    const normalizeDate = (s) => {
+        s = (s || '').trim();
+        if (!s) return todayStr;
+        const m = s.match(/^(\d{4})[\/\-.年](\d{1,2})[\/\-.月](\d{1,2})/);
+        if (m) {
+            return `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
+        }
+        // Excelのシリアル日付値（念のため）
+        if (/^\d+(\.\d+)?$/.test(s)) {
+            const n = parseFloat(s);
+            if (n > 20000 && n < 80000) {
+                const dt = new Date(Math.round((n - 25569) * 86400000));
+                if (!isNaN(dt)) return dt.toISOString().slice(0, 10);
+            }
+        }
+        return s;
+    };
+
     /** ArrayBuffer を文字列へ。UTF-8で失敗したら Shift_JIS とみなす（Excelの日本語CSV対策）。 */
     const decodeBuffer = (buf) => {
         const bytes = new Uint8Array(buf);
@@ -194,23 +216,17 @@
                     const name = (cols[0] || '').trim();
                     if (!name) { skipCount++; return; }
 
-                    // 列: 顧客名, 業界, 受注日, 住所, リスト元媒体, 利用媒体(最後・カンマ区切り)
-                    const industry = (cols[1] || '').trim();
-                    const orderDate = (cols[2] || '').trim() || todayStr;
-                    const address = (cols[3] || '').trim();
-                    const sourceMediaId = (cols[4] || '').trim() ? findOrCreateMedia(cols[4].trim()) : '';
-                    const mediaNamesStr = cols.slice(5).join(',');
-
-                    const mediaIds = [];
-                    mediaNamesStr.split(/[,、\s]+/).filter(Boolean).forEach(mName => {
-                        const found = store.media.find(m => m.name.toLowerCase() === mName.toLowerCase() || mName.includes(m.name));
-                        mediaIds.push(found ? found.id : findOrCreateMedia(mName, 'unknown'));
-                    });
+                    // 列(FileMaker書き出し順): 顧客名, 住所, リスト元媒体, 業種, 受注日
+                    const address = (cols[1] || '').trim();
+                    const sourceName = cleanMediaName(cols[2] || '');
+                    const sourceMediaId = sourceName ? findOrCreateMedia(sourceName) : '';
+                    const industry = (cols[3] || '').trim();
+                    const orderDate = normalizeDate(cols[4] || '');
 
                     store.clients.push({
                         id: genId('c'),
                         name, industry, orderDate, address, sourceMediaId,
-                        usedMediaIds: mediaIds,
+                        usedMediaIds: [],   // 「他に利用している媒体」は取り込み後にダッシュボードの検索で確認
                     });
                     successCount++;
                 });
