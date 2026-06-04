@@ -583,6 +583,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect_self();
     }
 
+    if ($action === 'delete_usages') {
+        require_role_at_least($gid, 'member');
+        $ids = array_values(array_filter(array_map('intval', (array) ($_POST['usage_ids'] ?? []))));
+        if ($ids) {
+            $in = implode(',', array_fill(0, count($ids), '?'));
+            $st = $pdo->prepare("DELETE FROM usages WHERE id IN ($in) AND api_id IN (SELECT id FROM apis WHERE group_id = ?)");
+            $st->execute(array_merge($ids, [$gid]));
+            flash('ok', $st->rowCount() . '件のURLを削除しました。');
+        } else {
+            flash('err', '削除するURLが選択されていません。');
+        }
+        redirect_self();
+    }
+
     redirect_self();
 }
 
@@ -2033,6 +2047,7 @@ if ($route === 'product'):
             <input id="moveNewProj" placeholder="proj_xxx（任意）" style="width:140px">
         </span>
         <button class="primary" type="button" onclick="doMove()">箱へ移動</button>
+        <button class="danger" type="button" onclick="doDeleteSelected()"><?= icon('trash', 15) ?> 選択を削除</button>
         <span id="moveCount" class="hint"></span>
         <span class="spacer"></span>
         <label class="hint" style="white-space:nowrap"><input type="checkbox" onchange="selAllGlobal(this)" style="width:auto"> 表示中の全URL選択</label>
@@ -2245,6 +2260,16 @@ if ($route === 'product'):
         if (!confirm('URL ' + uids.length + ' 件 / サイト ' + sites.length + ' 件を ' + label + ' へ移動します。よろしいですか？')) return;
         uids.forEach(id => add('usage_ids[]', id));
         sites.forEach(s => add('sites[]', s));
+        document.body.appendChild(f); f.submit();
+    }
+    function doDeleteSelected() {
+        const uids = [...document.querySelectorAll('.moveChk:checked')].map(c => c.value);
+        if (!uids.length) { alert('削除するURLを☑で選択してください（「表示中の全URL選択」も使えます）。'); return; }
+        if (!confirm('選択した ' + uids.length + ' 件のURLを削除します。取り消せません。よろしいですか？')) return;
+        const f = document.createElement('form'); f.method = 'post'; f.action = 'index.php';
+        const add = (k, v) => { const i = document.createElement('input'); i.type = 'hidden'; i.name = k; i.value = v; f.appendChild(i); };
+        add('csrf', ABT_CSRF); add('action', 'delete_usages');
+        uids.forEach(id => add('usage_ids[]', id));
         document.body.appendChild(f); f.submit();
     }
 
