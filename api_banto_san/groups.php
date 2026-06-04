@@ -71,6 +71,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('groups.php?gid=' . $gid);
     }
 
+    if ($action === 'rename_group') {
+        require_role_at_least($gid, 'admin');
+        $newName = trim((string) ($_POST['name'] ?? ''));
+        if ($newName === '') {
+            flash('err', 'グループ名を入力してください。');
+            redirect('groups.php?gid=' . $gid);
+        }
+        $pdo->prepare('UPDATE groups SET name = :n WHERE id = :g')->execute([':n' => $newName, ':g' => $gid]);
+        flash('ok', 'グループ名を「' . $newName . '」に変更しました。');
+        redirect('groups.php?gid=' . $gid);
+    }
+
     if ($action === 'cancel_invite') {
         require_role_at_least($gid, 'admin');
         $iid = (int) ($_POST['invite_id'] ?? 0);
@@ -258,6 +270,15 @@ function gstyles(): void { ?>
                         <h2 style="margin:0"><?= h($viewGroup['name']) ?></h2>
                         <span class="pill <?= h($viewRole) ?>">あなた: <?= h(ROLES[$viewRole] ?? $viewRole) ?></span>
                     </div>
+                    <?php if ($canManage): ?>
+                    <form method="post" class="row" style="margin-top:12px;gap:6px">
+                        <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+                        <input type="hidden" name="action" value="rename_group">
+                        <input type="hidden" name="gid" value="<?= (int) $viewGid ?>">
+                        <input type="text" name="name" value="<?= h($viewGroup['name']) ?>" required style="flex:1;min-width:160px" placeholder="グループ名">
+                        <button class="primary" type="submit"><?= icon('gear', 15) ?> 名前を変更</button>
+                    </form>
+                    <?php endif; ?>
                 </div>
 
                 <!-- メンバー -->
