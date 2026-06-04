@@ -987,14 +987,24 @@ function render_styles(): void { ?>
     .gbtn { display:inline-flex; align-items:center; gap:10px; padding:11px 18px; border:1px solid var(--line);
         border-radius:10px; background:#fff; color:#1f2733; text-decoration:none; font-weight:600; font-size:15px; }
     .gbtn:hover { background:#f8fafc; }
+    .navtoggle{ display:none; margin-left:auto; border:none; background:rgba(255,255,255,.18); color:#fff; border-radius:9px; padding:6px 9px; cursor:pointer; align-items:center; }
+    .navtoggle .ic{ color:#fff; }
     @media (max-width:820px){
         .layout{flex-direction:column;}
-        .sidebar{width:auto;flex:none;height:auto;position:static;display:flex;flex-wrap:wrap;align-items:center;gap:6px;border-right:none;border-bottom:1px solid var(--line);padding:10px 12px;}
-        .sidebar .brand{flex:1 1 100%;margin:0 0 6px;padding:9px 12px;border-bottom:none;border-image:none;border-radius:10px;font-size:16px;}
+        .sidebar{width:auto;flex:none;height:auto;position:static;display:block;gap:0;border-right:none;border-bottom:1px solid var(--line);padding:8px 10px;}
+        .sidebar .brand{display:flex;align-items:center;gap:8px;margin:0;padding:10px 12px;border-bottom:none;border-image:none;border-radius:10px;font-size:16px;}
+        .navtoggle{display:inline-flex;}
         .sidebar .navlabel{display:none;}
-        .sidebar a.nav{margin:0;padding:7px 11px;font-size:13px;}
-        .sidebar a.nav.active{box-shadow:none;}
-        .sidebar .who{display:none;}
+        /* 既定は閉じる：ブランドだけ表示 */
+        .sidebar a.nav, .sidebar .who{display:none;}
+        /* 開いたとき：暖簾風ドロップダウン */
+        .sidebar.open{background:#16265e;border-radius:0 0 14px 14px;padding-bottom:12px;}
+        .sidebar.open .brand{border-bottom:6px solid;border-image:repeating-linear-gradient(90deg,#e0a93b 0 16px,#fff 16px 32px) 1;border-radius:10px 10px 0 0;margin-bottom:8px;}
+        .sidebar.open a.nav{display:flex;width:auto;margin:5px 10px;padding:11px 14px;font-size:14px;color:#eef1fb;background:rgba(255,255,255,.07);border-radius:10px;}
+        .sidebar.open a.nav .ic{color:#dbe2f5;}
+        .sidebar.open a.nav.active{background:var(--gold);color:#3a2a05;box-shadow:none;}
+        .sidebar.open a.nav.active .ic{color:#3a2a05;}
+        .sidebar.open .who{display:flex;margin:8px 10px 0;color:#dbe2f5;border-top:1px solid rgba(255,255,255,.15);padding-top:10px;}
         .main{padding:14px;}
         .grid{grid-template-columns:1fr;}
         .detail-grid{grid-template-columns:1fr;}
@@ -1526,7 +1536,7 @@ if ($route === 'guide'):
 <body>
 <div class="layout">
 <aside class="sidebar">
-    <div class="brand"><img class="brandlogo" src="<?= h(app_base_url()) ?>/logo.svg" alt=""> <?= h(APP_NAME) ?></div>
+    <div class="brand"><img class="brandlogo" src="<?= h(app_base_url()) ?>/logo.svg" alt=""> <?= h(APP_NAME) ?><button class="navtoggle" type="button" aria-label="メニュー" onclick="this.closest('.sidebar').classList.toggle('open')"><?= icon('menu', 22) ?></button></div>
     <div class="navlabel">メニュー</div>
     <a class="nav" href="index.php"><?= icon('dashboard') ?> ダッシュボード</a>
     <?php if (can_manage()): ?><a class="nav" href="<?= h(app_url('scan')) ?>"><?= icon('search') ?> スキャン</a><?php endif; ?>
@@ -1635,7 +1645,7 @@ if ($route === 'manage'):
 <body>
 <div class="layout">
 <aside class="sidebar">
-    <div class="brand"><img class="brandlogo" src="<?= h(app_base_url()) ?>/logo.svg" alt=""> <?= h(APP_NAME) ?></div>
+    <div class="brand"><img class="brandlogo" src="<?= h(app_base_url()) ?>/logo.svg" alt=""> <?= h(APP_NAME) ?><button class="navtoggle" type="button" aria-label="メニュー" onclick="this.closest('.sidebar').classList.toggle('open')"><?= icon('menu', 22) ?></button></div>
     <div class="navlabel">メニュー</div>
     <a class="nav" href="index.php"><?= icon('dashboard') ?> ダッシュボード</a>
     <?php if (can_manage()): ?><a class="nav" href="<?= h(app_url('scan')) ?>"><?= icon('search') ?> スキャン</a><?php endif; ?>
@@ -1779,7 +1789,7 @@ if ($route === 'product'):
 <body>
 <div class="layout">
 <aside class="sidebar">
-    <div class="brand"><img class="brandlogo" src="<?= h(app_base_url()) ?>/logo.svg" alt=""> <?= h(APP_NAME) ?></div>
+    <div class="brand"><img class="brandlogo" src="<?= h(app_base_url()) ?>/logo.svg" alt=""> <?= h(APP_NAME) ?><button class="navtoggle" type="button" aria-label="メニュー" onclick="this.closest('.sidebar').classList.toggle('open')"><?= icon('menu', 22) ?></button></div>
     <div class="navlabel">メニュー</div>
     <a class="nav" href="index.php"><?= icon('dashboard') ?> ダッシュボード</a>
     <?php if (can_manage()): ?><a class="nav" href="<?= h(app_url('scan')) ?>"><?= icon('search') ?> スキャン</a><?php endif; ?>
@@ -1974,7 +1984,7 @@ if ($route === 'product'):
 <body>
 <div class="layout">
 <aside class="sidebar">
-    <div class="brand"><img class="brandlogo" src="<?= h(app_base_url()) ?>/logo.svg" alt=""> <?= h(APP_NAME) ?></div>
+    <div class="brand"><img class="brandlogo" src="<?= h(app_base_url()) ?>/logo.svg" alt=""> <?= h(APP_NAME) ?><button class="navtoggle" type="button" aria-label="メニュー" onclick="this.closest('.sidebar').classList.toggle('open')"><?= icon('menu', 22) ?></button></div>
     <div class="navlabel">メニュー</div>
     <a class="nav active" href="index.php"><?= icon('dashboard') ?> ダッシュボード</a>
     <?php if (can_manage()): ?><a class="nav" href="<?= h(app_url('scan')) ?>"><?= icon('search') ?> スキャン</a><?php endif; ?>
