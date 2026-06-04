@@ -13,11 +13,11 @@ require __DIR__ . '/layout_top.php';
 <div class="max-w-6xl mx-auto space-y-6">
     <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
         <div class="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-            <label class="block text-sm font-bold text-gray-700 mb-2">フラグ（媒体）を選択して顧客を絞り込む</label>
+            <label class="block text-sm font-bold text-gray-700 mb-2">リスト元（媒体）を選んで、その顧客が「他に利用している媒体」を見る</label>
             <div class="flex items-center space-x-4">
                 <select v-model="selectedMediaId" class="flex-1 max-w-md border border-gray-300 rounded-md p-2.5 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm font-medium text-gray-800">
-                    <option value="">-- 媒体を選択してください --</option>
-                    <option v-for="media in mediaList" :key="media.id" :value="media.id">
+                    <option value="">-- リスト元を選択してください --</option>
+                    <option v-for="media in sourceMediaList" :key="media.id" :value="media.id">
                         {{ media.name }}
                     </option>
                 </select>
@@ -29,19 +29,23 @@ require __DIR__ . '/layout_top.php';
 
         <div v-if="!selectedMediaId" class="text-center py-12 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl">
             <i data-lucide="filter" class="w-12 h-12 mx-auto mb-3 opacity-50"></i>
-            <p>上のセレクトボックスから媒体（リスト元）を選択してください。</p>
+            <p>上のセレクトボックスからリスト元（受注の獲得元媒体）を選択してください。</p>
         </div>
 
         <div v-else class="space-y-6">
             <!-- 重複ランキング表 -->
             <div class="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm">
                 <div class="bg-white px-6 py-8 border-b border-gray-200 text-center">
-                    <h3 class="font-bold text-gray-800 text-2xl mb-4">重複ランキング</h3>
-                    <p class="text-red-600 font-bold text-lg">リスト元が「{{ selectedMediaName }}」で重複ランキングを出力</p>
+                    <h3 class="font-bold text-gray-800 text-2xl mb-4">他に利用している媒体ランキング</h3>
+                    <p class="text-red-600 font-bold text-lg">「{{ selectedMediaName }}」から受注した顧客が、他に利用している媒体</p>
                 </div>
                 <div class="p-0">
                     <div v-if="flaggedMediaRanking.length === 0" class="text-center p-8 text-gray-500">
-                        併用データがありません。
+                        <template v-if="!hasOtherMediaData">
+                            この顧客たちの「他に利用している媒体」がまだ登録されていません。<br>
+                            <span class="text-sm text-gray-400">（各顧客の詳細検索で他媒体を取得すると、ここに集計されます）</span>
+                        </template>
+                        <template v-else>併用データがありません。</template>
                     </div>
                     <table v-else class="w-full text-sm text-left">
                         <thead class="text-xs text-gray-700 bg-gray-50 border-b border-gray-200">
@@ -68,7 +72,7 @@ require __DIR__ . '/layout_top.php';
             <!-- 該当顧客リスト -->
             <div class="border border-gray-200 rounded-xl overflow-hidden mt-8">
                 <div class="bg-gray-100 px-4 py-3 border-b border-gray-200 font-bold text-gray-700 flex justify-between">
-                    <span>ランキング対象の顧客一覧 ({{ filteredClientsByFlag.length }}社)</span>
+                    <span>「{{ selectedMediaName }}」から受注した顧客一覧 ({{ filteredClientsByFlag.length }}社)</span>
                 </div>
                 <div class="max-h-[400px] overflow-y-auto bg-white p-4">
                     <ul class="space-y-3">

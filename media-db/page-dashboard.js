@@ -38,6 +38,11 @@
 
             const periodMediaRanking = computed(() => calculateRanking(filteredClientsByDate.value));
 
+            // 対象顧客の中に「他に利用している媒体」データを持つ人がいるか（空表示の出し分け用）
+            const hasOtherMediaData = computed(() =>
+                filteredClientsByDate.value.some(c => (c.usedMediaIds || []).length > 0)
+            );
+
             const resetDateFilter = () => {
                 filterStartDate.value = '';
                 filterEndDate.value = '';
@@ -88,7 +93,7 @@
             return {
                 store,
                 filterStartDate, filterEndDate, resetDateFilter,
-                filteredClientsByDate, dateRangeText, periodMediaRanking,
+                filteredClientsByDate, dateRangeText, periodMediaRanking, hasOtherMediaData,
                 getMediaDetails, deleteClient, exportCsv,
                 sourceMedia, hasDomain, siteUrl, strippedAddress, searchUrl,
             };

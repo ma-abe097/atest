@@ -107,7 +107,11 @@ require __DIR__ . '/layout_top.php';
 
             <div class="flex-1 overflow-y-auto pr-2">
                 <div v-if="periodMediaRanking.length === 0" class="text-center p-8 text-gray-500">
-                    集計データがありません。
+                    <template v-if="!hasOtherMediaData">
+                        「他に利用している媒体」のデータがまだありません。<br>
+                        <span class="text-sm text-gray-400">（各顧客の詳細検索で他媒体を取得すると、ここに集計されます）</span>
+                    </template>
+                    <template v-else>集計データがありません。</template>
                 </div>
                 <ul v-else class="space-y-3">
                     <li v-for="(item, index) in periodMediaRanking" :key="item.media.id"
