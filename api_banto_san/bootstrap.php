@@ -578,6 +578,7 @@ function render_sidebar(string $active = ''): void
     <a class="nav<?= $a('tokens') ?>" href="<?= h(app_url('tokens')) ?>"><?= icon('key') ?> トークン</a>
     <?php if (can_edit()): ?><a class="nav<?= $a('manage') ?>" href="<?= h(app_url('manage')) ?>"><?= icon('gear') ?> 管理</a><?php endif; ?>
     <?php if (can_edit()): ?><a class="nav<?= $a('accounts') ?>" href="<?= h(app_url('accounts')) ?>"><?= icon('lock') ?> アカウント管理</a><?php endif; ?>
+    <a class="nav<?= $a('myaccounts') ?>" href="<?= h(app_url('myaccounts')) ?>"><?= icon('key') ?> 個人アカウント</a>
     <a class="nav<?= $a('guide') ?>" href="<?= h(app_url('guide')) ?>"><?= icon('help') ?> キーの取得ガイド</a>
     <a class="nav<?= $a('groups') ?>" href="groups.php"><?= icon('users') ?> グループ管理</a>
     <div class="navlabel">アカウント</div>
@@ -828,6 +829,7 @@ function db(): PDO
         CREATE TABLE IF NOT EXISTS accounts (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             group_id    INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+            owner_email TEXT    NOT NULL DEFAULT '',
             category    TEXT    NOT NULL DEFAULT '',
             service     TEXT    NOT NULL,
             login_id    TEXT    NOT NULL DEFAULT '',
@@ -940,6 +942,12 @@ function db(): PDO
     $grpCols = array_column($pdo->query('PRAGMA table_info(groups)')->fetchAll(), 'name');
     if (!in_array('last_cost_refresh', $grpCols, true)) {
         $pdo->exec('ALTER TABLE groups ADD COLUMN last_cost_refresh TEXT');
+    }
+
+    // accounts に「個人用（本人のみ閲覧）」の所有者メールを後付け。空=共有アカウント。
+    $acctCols = array_column($pdo->query('PRAGMA table_info(accounts)')->fetchAll(), 'name');
+    if (!in_array('owner_email', $acctCols, true)) {
+        $pdo->exec("ALTER TABLE accounts ADD COLUMN owner_email TEXT NOT NULL DEFAULT ''");
     }
 
     // 既存 cost_project → projects 箱へ自動移行（projects が空のときだけ）
@@ -1066,23 +1074,75 @@ function delete_credential(int $gid, int $id): void
  * ------------------------------------------------------------------ */
 function list_accounts(int $gid): array
 {
-    $st = db()->prepare('SELECT id, category, service, login_id, secret_hint, url, notes, updated_by, updated_at FROM accounts WHERE group_id = :g ORDER BY category, service');
+    // 共有アカウントのみ（owner_email='' = グループ共有。個人用は別関数で扱う）
+    $st = db()->prepare("SELECT id, category, service, login_id, secret_hint, url, notes, updated_by, updated_at FROM accounts WHERE group_id = :g AND owner_email = '' ORDER BY category, service");
     $st->execute([':g' => $gid]);
     return $st->fetchAll();
 }
 
 function get_account(int $gid, int $id): ?array
 {
-    $st = db()->prepare('SELECT * FROM accounts WHERE id = :id AND group_id = :g');
+    // 共有アカウントのみ取得（個人用は混在させない）
+    $st = db()->prepare("SELECT * FROM accounts WHERE id = :id AND group_id = :g AND owner_email = ''");
     $st->execute([':id' => $id, ':g' => $gid]);
     return $st->fetch() ?: null;
 }
 
 function account_categories(int $gid): array
 {
-    $st = db()->prepare("SELECT DISTINCT category FROM accounts WHERE group_id = :g AND category <> '' ORDER BY category");
+    $st = db()->prepare("SELECT DISTINCT category FROM accounts WHERE group_id = :g AND owner_email = '' AND category <> '' ORDER BY category");
     $st->execute([':g' => $gid]);
     return $st->fetchAll(PDO::FETCH_COLUMN);
+}
+
+/* ---- 個人用アカウント（本人のみ閲覧）。owner_email でグループ横断に本人のものだけを扱う ---- */
+
+function list_my_accounts(string $owner): array
+{
+    $st = db()->prepare("SELECT id, category, service, login_id, secret_hint, url, notes, updated_at FROM accounts WHERE owner_email = :o AND owner_email <> '' ORDER BY category, service");
+    $st->execute([':o' => $owner]);
+    return $st->fetchAll();
+}
+
+function my_account_categories(string $owner): array
+{
+    $st = db()->prepare("SELECT DISTINCT category FROM accounts WHERE owner_email = :o AND owner_email <> '' AND category <> '' ORDER BY category");
+    $st->execute([':o' => $owner]);
+    return $st->fetchAll(PDO::FETCH_COLUMN);
+}
+
+/** 個人用アカウントを作成/更新（本人のみ）。$password 空なら既存PWを保持。戻り値: id */
+function save_my_account(int $gid, string $owner, ?int $id, string $category, string $service, string $login, string $url, string $notes, string $password): int
+{
+    $now = now();
+    if ($id === null) {
+        db()->prepare('INSERT INTO accounts (group_id, owner_email, category, service, login_id, url, notes, updated_by, created_at, updated_at) VALUES (:g,:o,:cat,:s,:l,:u,:n,:o,:c,:c)')
+            ->execute([':g' => $gid, ':o' => $owner, ':cat' => $category, ':s' => $service, ':l' => $login, ':u' => $url, ':n' => $notes, ':c' => $now]);
+        $id = (int) db()->lastInsertId();
+    } else {
+        db()->prepare("UPDATE accounts SET category=:cat, service=:s, login_id=:l, url=:u, notes=:n, updated_at=:t WHERE id=:id AND owner_email=:o AND owner_email <> ''")
+            ->execute([':cat' => $category, ':s' => $service, ':l' => $login, ':u' => $url, ':n' => $notes, ':t' => $now, ':id' => $id, ':o' => $owner]);
+    }
+    if ($password !== '' && encryption_ready()) {
+        db()->prepare("UPDATE accounts SET secret_enc=:e, secret_hint=:h, secret_fp=:f WHERE id=:id AND owner_email=:o AND owner_email <> ''")
+            ->execute([':e' => encrypt_secret($password), ':h' => secret_hint($password), ':f' => secret_fingerprint($password), ':id' => $id, ':o' => $owner]);
+    }
+    return $id;
+}
+
+function delete_my_account(string $owner, int $id): void
+{
+    db()->prepare("DELETE FROM accounts WHERE id = :id AND owner_email = :o AND owner_email <> ''")->execute([':id' => $id, ':o' => $owner]);
+}
+
+/** 個人用アカウントの平文パスワードを返す（本人のみ） */
+function reveal_my_account_password(string $owner, int $id): ?string
+{
+    $st = db()->prepare("SELECT secret_enc FROM accounts WHERE id = :id AND owner_email = :o AND owner_email <> ''");
+    $st->execute([':id' => $id, ':o' => $owner]);
+    $row = $st->fetch();
+    if (!$row) { return null; }
+    return decrypt_secret($row['secret_enc'] ?? null);
 }
 
 /** アカウントを作成/更新。$password 空なら既存PWを保持。戻り値: id */
