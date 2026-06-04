@@ -1471,6 +1471,7 @@ if ($route === 'accounts'):
     <?php if ($flashMsg): ?><div class="flash <?= h($flashMsg[0]) ?>"><?= nl2br(h($flashMsg[1])) ?></div><?php endif; ?>
     <?php if (!encryption_ready()): ?><div class="flash" style="background:#fff4e0;color:#92400e">🔐 パスワードを保存するには <code>config.local.php</code> に <code>APP_ENCRYPTION_KEY</code> を設定してください。</div><?php endif; ?>
     <p class="hint" style="margin:0 0 14px">サービスのログインID・パスワードを暗号化して保管します。パスワードは「表示」を押した時だけ見えます。社内アカウントのみ閲覧可。</p>
+    <div class="steam-hr"></div>
 
     <?php if (!$accounts): ?>
         <div class="empty">まだ登録がありません。「アカウントを追加」から登録してください。</div>
@@ -2280,6 +2281,7 @@ if ($route === 'product'):
     <?php if (!$tree): ?>
         <div class="empty"><div class="duck-hero" style="margin-bottom:10px"><img class="duckimg" src="<?= h(app_base_url()) ?>/duck2.png" alt="" style="width:96px"></div>該当するデータがありません。<?= $editable ? '「＋ API を追加」または「スキャン」で取り込んでください。' : '' ?></div>
     <?php else: ?>
+    <div class="steam-hr"></div>
     <!-- プロダクト・カード一覧 -->
     <div class="card-grid">
         <?php foreach ($names as $gname):
