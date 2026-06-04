@@ -198,6 +198,49 @@ function duck_svg(int $px = 8): string
     return $out . '</svg>';
 }
 
+/** プロダクト名/プロバイダ名から、ロゴ取得用のドメインを推定（既知のみ） */
+function provider_domain(string $name): string
+{
+    $n = strtolower($name);
+    $map = [
+        'openai' => 'openai.com', 'anthropic' => 'anthropic.com', 'twilio' => 'twilio.com',
+        'sendgrid' => 'sendgrid.com', 'stripe' => 'stripe.com', 'aws' => 'aws.amazon.com',
+        'amazon' => 'aws.amazon.com', 'azure' => 'azure.microsoft.com', 'microsoft' => 'microsoft.com',
+        'gcp' => 'cloud.google.com', 'google' => 'google.com', 'gemini' => 'deepmind.google',
+        'dataforseo' => 'dataforseo.com', 'serpapi' => 'serpapi.com', 'here' => 'here.com',
+        'tomtom' => 'tomtom.com', 'mapbox' => 'mapbox.com', 'vonage' => 'vonage.com', 'nexmo' => 'vonage.com',
+        'slack' => 'slack.com', 'github' => 'github.com', 'line' => 'line.me', 'meta' => 'meta.com',
+        'facebook' => 'facebook.com', 'cloudflare' => 'cloudflare.com', 'algolia' => 'algolia.com',
+        'notion' => 'notion.so', 'spotify' => 'spotify.com', 'pinterest' => 'pinterest.com',
+    ];
+    foreach ($map as $k => $d) { if (strpos($n, $k) !== false) { return $d; } }
+    return '';
+}
+
+/** 名前から決定的なブランド色 */
+function badge_color(string $s): string
+{
+    $colors = ['#10a37f', '#f22f46', '#4285f4', '#ff9900', '#0078d4', '#635bff', '#e1306c',
+               '#ff6b35', '#0ea5e9', '#8b5cf6', '#16a34a', '#ef4444', '#0aa5a5', '#d946ef'];
+    return $colors[abs(crc32($s)) % count($colors)];
+}
+
+/** プロダクト（会社）のロゴバッジ。既知ドメインはファビコン、無ければ頭文字＋ブランド色の円。 */
+function provider_badge(string $name, int $size = 34): string
+{
+    $name = trim($name) !== '' ? trim($name) : '?';
+    $dom = provider_domain($name);
+    $color = badge_color($name);
+    $mono = h(mb_strtoupper(mb_substr($name, 0, 1)));
+    $fs = (int) round($size * 0.5);
+    $out = '<span class="plogo" style="width:' . $size . 'px;height:' . $size . 'px;background:' . $color . ';font-size:' . $fs . 'px">';
+    $out .= '<span class="mono">' . $mono . '</span>';
+    if ($dom !== '') {
+        $out .= '<img src="https://www.google.com/s2/favicons?sz=64&domain=' . h($dom) . '" alt="" loading="lazy" onerror="this.remove()">';
+    }
+    return $out . '</span>';
+}
+
 function render_styles(): void { ?>
 <link rel="icon" type="image/svg+xml" href="<?= h(app_base_url()) ?>/favicon.svg">
 <style>
@@ -286,6 +329,18 @@ function render_styles(): void { ?>
     .bar-row .v { flex:0 0 auto; font-variant-numeric:tabular-nums; font-weight:700; }
     .product-link { color:var(--accent); text-decoration:none; font-size:13px; word-break:break-all; }
     .product-link:hover { text-decoration:underline; }
+    /* プロダクト一覧の「詳細」ピルボタン */
+    a.detail-btn { display:inline-flex; align-items:center; gap:5px; padding:5px 12px; border-radius:999px; font-size:12.5px; font-weight:700;
+        color:#fff; background:linear-gradient(135deg,var(--accent),#5aa6ec); text-decoration:none; box-shadow:0 3px 10px rgba(47,122,214,.30);
+        white-space:nowrap; transition:transform .12s, box-shadow .12s; }
+    a.detail-btn:hover { transform:translateY(-1px); box-shadow:0 5px 14px rgba(47,122,214,.42); }
+    a.detail-btn .ic { transition:transform .12s; }
+    a.detail-btn:hover .ic { transform:translateX(3px); }
+    /* 会社ロゴ・バッジ */
+    .plogo { position:relative; display:inline-flex; align-items:center; justify-content:center; border-radius:50%;
+        color:#fff; font-weight:800; flex:0 0 auto; vertical-align:middle; box-shadow:0 2px 6px rgba(31,48,61,.15); }
+    .plogo .mono { line-height:1; }
+    .plogo img { position:absolute; top:16%; left:16%; width:68%; height:68%; object-fit:contain; }
     .guide-grid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:14px; align-items:stretch; }
     .guide-card { height:100%; }
     @media (max-width:680px){ .guide-grid { grid-template-columns:1fr; } }

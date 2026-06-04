@@ -1545,7 +1545,7 @@ if ($route === 'product'):
 <main class="main">
     <div class="crumb"><a href="index.php">ダッシュボード</a> ／ <?= h($pname) ?></div>
     <div class="topbar">
-        <h2><?= icon('product') ?> <?= h($pname) ?><?php if ($pprovider): ?> <span class="muted" style="font-size:14px">（<?= h($pprovider) ?>）</span><?php endif; ?></h2>
+        <h2 style="display:inline-flex;align-items:center;gap:10px"><?= provider_badge($pname, 36) ?> <?= h($pname) ?><?php if ($pprovider): ?> <span class="muted" style="font-size:14px">（<?= h($pprovider) ?>）</span><?php endif; ?></h2>
         <span class="grow"></span>
         <?php if ($editable): ?>
             <button type="button" class="btn" onclick="openProject({product: <?= htmlspecialchars(json_encode($pname, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>})"><?= icon('plus', 15) ?> 箱を追加</button>
@@ -1896,8 +1896,8 @@ if ($route === 'product'):
             <tr class="group-head" data-name="<?= h($gname) ?>" data-gi="<?= $gi ?>" onclick="toggleProduct(<?= $gi ?>)"
                 <?= $editable ? 'draggable="true" ondragstart="gDragStart(event,this)" ondragend="gDragEnd(this)" ondragover="gDragOver(event,this)" ondragleave="gDragLeave(this)" ondrop="gDrop(event,this)"' : '' ?>>
                 <td><?php if ($editable): ?><span class="drag-handle" title="ドラッグで並べ替え"><?= icon('grip', 16) ?></span><?php endif; ?><span id="pc<?= $gi ?>" class="caret"><?= icon('chevron', 16) ?></span></td>
-                <td><?= icon('product') ?> <strong><?= h($gname) ?></strong> <?php if ($provider): ?><span class="muted">（<?= h($provider) ?>）</span><?php endif; ?>
-                    <a href="<?= h(app_url('product', ['name' => $gname])) ?>" class="product-link" onclick="event.stopPropagation()">詳細 <?= icon('right', 14) ?></a></td>
+                <td><span style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap"><?= provider_badge($gname, 30) ?> <strong><?= h($gname) ?></strong><?php if ($provider): ?> <span class="muted">（<?= h($provider) ?>）</span><?php endif; ?>
+                    <a href="<?= h(app_url('product', ['name' => $gname])) ?>" class="detail-btn" onclick="event.stopPropagation()">詳細 <?= icon('right', 14) ?></a></span></td>
                 <td class="cost group-cost"><?= h($pmoneyStr) ?></td>
                 <td class="hide-sm" style="white-space:nowrap">
                     <span class="muted"><?= $nBoxes ?> 箱 / <?= count($prodSites) ?> サイト</span>
