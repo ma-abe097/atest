@@ -191,38 +191,16 @@ $csrf      = csrf_token();
 /* small style helper reuse */
 function gstyles(): void { ?>
 <style>
-    :root{--bg:#f5f6f8;--card:#fff;--line:#e3e6ea;--ink:#1f2733;--muted:#8a93a0;--accent:#2563eb;--accent-d:#1d4ed8;--ok-bg:#e7f6ec;--ok-ink:#1a7f43;--err-bg:#fdecec;--err-ink:#b42318;}
-    *{box-sizing:border-box;}
-    .ic{vertical-align:-0.16em;}
-    .brandlogo{height:24px;width:auto;vertical-align:-6px;}
-    header.app h1 .ic{vertical-align:-0.18em;}
-    body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP",Meiryo,sans-serif;line-height:1.6;}
-    header.app{background:#0f172a;color:#fff;padding:12px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
-    header.app h1{font-size:18px;margin:0;font-weight:700;}
-    header.app .spacer{flex:1;}
-    header.app a.navlink{color:#cbd5e1;text-decoration:none;font-size:13px;padding:4px 8px;border-radius:7px;}
-    header.app a.navlink:hover{background:#1e293b;color:#fff;}
-    .wrap{max-width:980px;margin:0 auto;padding:20px;}
-    .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:18px;}
+    /* groups固有のスタイルのみ（基本＋サイドバーは render_styles を共用） */
+    .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:18px;box-shadow:var(--shadow);}
     .card h2{margin:0 0 12px;font-size:16px;}
-    table{width:100%;border-collapse:collapse;}
-    th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--line);font-size:14px;vertical-align:middle;}
-    th{background:#f0f2f5;font-size:12px;color:var(--muted);font-weight:600;}
-    .muted{color:var(--muted);}
-    button,.btn{font-size:14px;padding:7px 12px;border-radius:8px;border:1px solid var(--line);background:#fff;color:var(--ink);cursor:pointer;text-decoration:none;display:inline-block;}
-    button.primary,.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;}
-    button.danger{color:var(--err-ink);border-color:#f3c4c0;}
-    input,select{padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px;}
-    .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600;background:#eef1f4;color:#475569;}
+    input,select{padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;}
     .pill.owner{background:#fef3c7;color:#92400e;} .pill.admin{background:#e0e7ff;color:#3730a3;}
     .pill.member{background:#e7f6ec;color:#1a7f43;} .pill.viewer{background:#eef1f4;color:#6b7280;}
     .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
-    .flash{padding:10px 14px;border-radius:10px;margin-bottom:14px;font-size:14px;}
-    .flash.ok{background:var(--ok-bg);color:var(--ok-ink);} .flash.err{background:var(--err-bg);color:var(--err-ink);}
     .grouplist a{display:block;padding:8px 10px;border-radius:8px;text-decoration:none;color:var(--ink);}
     .grouplist a.active{background:#eef4ff;color:var(--accent);font-weight:600;}
-    .grouplist a:hover{background:#f5f6f8;}
-    .hint{font-size:12px;color:var(--muted);}
+    .grouplist a:hover{background:#f3f5f9;}
 </style>
 <?php }
 ?>
@@ -233,19 +211,14 @@ function gstyles(): void { ?>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/svg+xml" href="<?= h(app_base_url()) ?>/favicon.svg">
 <title><?= h(APP_NAME) ?> — グループ管理</title>
+<?php render_styles(); ?>
 <?php gstyles(); ?>
 </head>
 <body>
-<header class="app">
-    <h1><img class="brandlogo" src="<?= h(app_base_url()) ?>/logo.svg" alt=""> <?= h(APP_NAME) ?></h1>
-    <span style="font-size:13px;color:#94a3b8">グループ管理</span>
-    <span class="spacer"></span>
-    <a class="navlink" href="index.php"><?= icon('left', 14) ?> ダッシュボードへ</a>
-    <span style="font-size:13px;color:#cbd5e1"><?= h($user['name'] ?: $user['email']) ?></span>
-    <a class="navlink" href="<?= h(app_url('logout')) ?>">ログアウト</a>
-</header>
-
-<div class="wrap">
+<div class="layout">
+<?php render_sidebar('groups'); ?>
+<main class="main">
+    <div class="topbar"><h2><?= icon('users') ?> グループ管理</h2></div>
     <?php if ($flashMsg): ?><div class="flash <?= h($flashMsg[0]) ?>"><?= h($flashMsg[1]) ?></div><?php endif; ?>
 
     <div style="display:grid;grid-template-columns:240px 1fr;gap:18px;align-items:start">
@@ -393,6 +366,7 @@ function gstyles(): void { ?>
             <?php endif; ?>
         </div>
     </div>
+</main>
 </div>
 </body>
 </html>
