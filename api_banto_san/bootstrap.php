@@ -141,6 +141,7 @@ function icon(string $name, int $size = 18): string
         'copy'      => '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
         'refresh'   => '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/>',
         'lock'      => '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+        'help'      => '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
         'gear'      => '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>',
         'chevron'   => '<polyline points="9 18 15 12 9 6"/>',
         'up'        => '<polyline points="18 15 12 9 6 15"/>',
@@ -387,6 +388,20 @@ function db(): PDO
         )
     SQL);
 
+    // キー取得ガイド（プロバイダごとの「必要なもの・取得場所」。既定を上書き編集できる）
+    $pdo->exec(<<<SQL
+        CREATE TABLE IF NOT EXISTS cost_guides (
+            group_id   INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+            ckey       TEXT    NOT NULL,
+            title      TEXT    NOT NULL DEFAULT '',
+            needs      TEXT    NOT NULL DEFAULT '',
+            source     TEXT    NOT NULL DEFAULT '',
+            url        TEXT    NOT NULL DEFAULT '',
+            updated_at TEXT    NOT NULL,
+            PRIMARY KEY (group_id, ckey)
+        )
+    SQL);
+
     $cols = $pdo->query('PRAGMA table_info(apis)')->fetchAll();
     $hasGroup = false;
     foreach ($cols as $c) {
@@ -569,6 +584,90 @@ function set_product_credential(int $gid, string $product, ?int $credId): void
         'INSERT INTO catalog_pref (group_id, name, position, credential_id) VALUES (:g,:n,0,:c)
          ON CONFLICT(group_id, name) DO UPDATE SET credential_id = :c'
     )->execute([':g' => $gid, ':n' => $product, ':c' => $credId]);
+}
+
+/* ------------------------------------------------------------------ *
+ *  キー取得ガイド（プロバイダ別「必要なもの・取得場所」）。既定＋上書き。
+ * ------------------------------------------------------------------ */
+function default_guides(): array
+{
+    return [
+        'openai' => ['title' => 'OpenAI（自動取得◯）',
+            'needs'  => '種別=OpenAI / キー欄=Adminキー（sk-admin-… で始まる）。アカウントID欄は不要。プロジェクト別に集計したい場合は、各箱の「識別子」に proj_xxx を入れる。',
+            'source' => 'OpenAI管理画面 → Settings → Organization → Admin keys で発行（組織オーナーのみ作成可）。proj_xxx は各プロジェクトの Settings → General に表示。',
+            'url'    => 'https://platform.openai.com/settings/organization/admin-keys'],
+        'twilio' => ['title' => 'Twilio（自動取得◯）',
+            'needs'  => 'アカウントID欄=Account SID（ACで始まる）/ キー欄=Auth Token。',
+            'source' => 'Twilio Console トップの「Account Info」に Account SID と Auth Token が表示。',
+            'url'    => 'https://console.twilio.com/'],
+        'dataforseo' => ['title' => 'DataForSEO（自動取得◯）',
+            'needs'  => 'アカウントID欄=API login（メール）/ キー欄=API password（API専用パスワード。普段のログインPWとは別物）。',
+            'source' => '管理画面の「API Access」ページに API login と API password が表示（再生成も可）。',
+            'url'    => 'https://app.dataforseo.com/api-access'],
+        'vonage' => ['title' => 'Vonage（自動取得◯／残高）',
+            'needs'  => 'アカウントID欄=API Key / キー欄=API Secret。',
+            'source' => 'Vonage API Dashboard トップの「API settings」に API key と API secret。',
+            'url'    => 'https://dashboard.nexmo.com/'],
+        'serpapi' => ['title' => 'SerpApi（自動取得◯／検索回数）',
+            'needs'  => 'キー欄=API Key（アカウントID欄は空でOK）。',
+            'source' => 'SerpApi ダッシュボードの「Your Account → Api Key」。',
+            'url'    => 'https://serpapi.com/manage-api-key'],
+        'here' => ['title' => 'HERE（手入力）',
+            'needs'  => '自動取得は非対応。月額は手入力してください。',
+            'source' => 'HERE platform の Usage / Billing を見て手入力。',
+            'url'    => 'https://platform.here.com/'],
+        'tomtom' => ['title' => 'TomTom（手入力）',
+            'needs'  => '自動取得は非対応。月額は手入力してください。',
+            'source' => 'TomTom Developer Dashboard の利用状況を参照。',
+            'url'    => 'https://developer.tomtom.com/'],
+        'google' => ['title' => 'Google Cloud（手入力）',
+            'needs'  => '即時取得APIが無いため当面は手入力（正式には課金データのBigQueryエクスポートが必要）。',
+            'source' => 'Google Cloud Console → お支払い（Billing）。',
+            'url'    => 'https://console.cloud.google.com/billing'],
+        'azure' => ['title' => 'Azure（将来対応）',
+            'needs'  => '自動取得は将来対応予定（Cost Management API）。当面は手入力。',
+            'source' => 'Azure Portal → コスト管理と請求。',
+            'url'    => 'https://portal.azure.com/'],
+    ];
+}
+
+/** ガイド一覧（既定＋グループの上書きをマージ。custom=既定に無い独自項目） */
+function list_guides(int $gid): array
+{
+    $def = default_guides();
+    $ov  = [];
+    $st = db()->prepare('SELECT * FROM cost_guides WHERE group_id = :g');
+    $st->execute([':g' => $gid]);
+    foreach ($st->fetchAll() as $r) { $ov[$r['ckey']] = $r; }
+    $out = [];
+    foreach ($def as $k => $e) {
+        if (isset($ov[$k])) {
+            $out[$k] = ['ckey' => $k, 'title' => $ov[$k]['title'], 'needs' => $ov[$k]['needs'], 'source' => $ov[$k]['source'], 'url' => $ov[$k]['url'], 'custom' => false, 'edited' => true];
+        } else {
+            $out[$k] = $e + ['ckey' => $k, 'custom' => false, 'edited' => false];
+        }
+    }
+    foreach ($ov as $k => $r) {
+        if (!isset($def[$k])) {
+            $out[$k] = ['ckey' => $k, 'title' => $r['title'], 'needs' => $r['needs'], 'source' => $r['source'], 'url' => $r['url'], 'custom' => true, 'edited' => true];
+        }
+    }
+    return $out;
+}
+
+function save_guide(int $gid, string $ckey, string $title, string $needs, string $source, string $url): void
+{
+    db()->prepare(
+        'INSERT INTO cost_guides (group_id, ckey, title, needs, source, url, updated_at)
+         VALUES (:g,:k,:t,:n,:s,:u,:at)
+         ON CONFLICT(group_id, ckey) DO UPDATE SET title=:t, needs=:n, source=:s, url=:u, updated_at=:at'
+    )->execute([':g' => $gid, ':k' => $ckey, ':t' => $title, ':n' => $needs, ':s' => $source, ':u' => $url, ':at' => now()]);
+}
+
+/** 上書きを削除（既定キーは既定に戻る／独自キーは消える） */
+function delete_guide(int $gid, string $ckey): void
+{
+    db()->prepare('DELETE FROM cost_guides WHERE group_id = :g AND ckey = :k')->execute([':g' => $gid, ':k' => $ckey]);
 }
 
 /* ------------------------------------------------------------------ *

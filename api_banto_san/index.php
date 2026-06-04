@@ -402,6 +402,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect_self();
     }
 
+    if ($action === 'save_guide') {
+        require_role_at_least($gid, 'admin');
+        $gkey = trim((string) ($_POST['ckey'] ?? ''));
+        if ($gkey === '') { $gkey = 'c' . substr(preg_replace('/[^a-z0-9]/', '', strtolower((string) ($_POST['title'] ?? ''))) ?: (string) time(), 0, 24); }
+        $gtitle = trim((string) ($_POST['title'] ?? ''));
+        if ($gtitle === '') { flash('err', 'タイトルを入力してください。'); redirect_self(); }
+        save_guide($gid, $gkey, $gtitle, trim((string) ($_POST['needs'] ?? '')), trim((string) ($_POST['source'] ?? '')), trim((string) ($_POST['url'] ?? '')));
+        flash('ok', 'ガイドを保存しました。');
+        redirect_self();
+    }
+
+    if ($action === 'delete_guide') {
+        require_role_at_least($gid, 'admin');
+        delete_guide($gid, (string) ($_POST['ckey'] ?? ''));
+        flash('ok', 'ガイドを既定に戻しました（独自項目は削除）。');
+        redirect_self();
+    }
+
     if ($action === 'set_product_credential') {
         require_role_at_least($gid, 'member');
         $prod = (string) ($_POST['product'] ?? '');
@@ -877,8 +895,12 @@ function render_styles(): void { ?>
     .bar-track { flex:1; height:10px; background:#eef1f4; border-radius:6px; overflow:hidden; }
     .bar-fill { height:100%; border-radius:6px; }
     .bar-row .v { flex:0 0 auto; font-variant-numeric:tabular-nums; font-weight:700; }
-    .product-link { color:var(--accent); text-decoration:none; font-size:13px; }
+    .product-link { color:var(--accent); text-decoration:none; font-size:13px; word-break:break-all; }
     .product-link:hover { text-decoration:underline; }
+    .guide-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:14px; }
+    .guide-card .guide-row { display:flex; gap:8px; font-size:13px; padding:6px 0; border-top:1px solid var(--line); }
+    .guide-card .guide-row:first-of-type { border-top:none; }
+    .guide-label { flex:0 0 84px; color:var(--muted); font-weight:700; }
     .fab { position:fixed; right:22px; bottom:22px; z-index:200; display:inline-flex; align-items:center; gap:8px;
         padding:12px 18px; border-radius:999px; border:none; background:var(--accent); color:#fff; font-weight:700; font-size:14px;
         box-shadow:0 10px 26px rgba(31,58,138,.40); cursor:pointer; }
@@ -1350,6 +1372,7 @@ function render_modals(string $csrf, array $names, array $credentials): void
                         <option value="vonage">Vonage</option>
                         <option value="serpapi">SerpApi</option>
                     </select>
+                    <div class="hint">各種別で必要な項目・取得場所は <a href="<?= h(app_url('guide')) ?>" target="_blank">キーの取得ガイド</a> を参照。</div>
                 </div>
                 <div class="field full" id="cf_acct_wrap" style="display:none"><label id="cf_acct_label">アカウントID</label><input name="cost_account" id="cf_acct" placeholder="Twilio: Account SID（ACxxxx）"></div>
                 <div class="field full" id="cf_proj_wrap"><label>OpenAI プロジェクトID（既定・任意）</label><input name="openai_project_id" id="cf_proj" placeholder="proj_xxxxx（空＝組織全体）"><div class="hint">箱側で個別指定があればそちらが優先されます。</div></div>
@@ -1479,6 +1502,116 @@ function render_modals(string $csrf, array $names, array $credentials): void
     <?php
 }
 ?>
+<?php
+/* ================================================================== *
+ *  ガイドページ（route=guide）：各キーの「必要なもの・取得場所」
+ * ================================================================== */
+if ($route === 'guide'):
+    $guides = list_guides($gid);
+    $canEditGuide = can_manage();
+?>
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><?= h(APP_NAME) ?> — キーの取得ガイド</title>
+<?php render_styles(); ?>
+</head>
+<body>
+<div class="layout">
+<aside class="sidebar">
+    <div class="brand"><img class="brandlogo" src="<?= h(app_base_url()) ?>/logo.svg" alt=""> <?= h(APP_NAME) ?></div>
+    <div class="navlabel">メニュー</div>
+    <a class="nav" href="index.php"><?= icon('dashboard') ?> ダッシュボード</a>
+    <?php if (can_manage()): ?><a class="nav" href="<?= h(app_url('scan')) ?>"><?= icon('search') ?> スキャン</a><?php endif; ?>
+    <a class="nav" href="<?= h(app_url('tokens')) ?>"><?= icon('key') ?> トークン</a>
+    <?php if (can_edit()): ?><a class="nav" href="<?= h(app_url('manage')) ?>"><?= icon('gear') ?> 管理</a><?php endif; ?>
+    <a class="nav" href="<?= h(app_url('guide')) ?>"><?= icon('help') ?> キーの取得ガイド</a>
+    <a class="nav active" href="<?= h(app_url('guide')) ?>"><?= icon('help') ?> キーの取得ガイド</a>
+    <a class="nav" href="groups.php"><?= icon('users') ?> グループ管理</a>
+    <div class="navlabel">アカウント</div>
+    <div class="who">
+        <?php if ($user['avatar_url']): ?><img src="<?= h($user['avatar_url']) ?>" alt=""><?php endif; ?>
+        <div>
+            <div style="font-weight:700;font-size:13px"><?= h($user['name'] ?: $user['email']) ?></div>
+            <div class="role-badge"><?= h(ROLES[$role] ?? $role) ?></div>
+        </div>
+    </div>
+    <a class="nav" href="<?= h(app_url('logout')) ?>"><?= icon('logout') ?> ログアウト</a>
+</aside>
+<main class="main">
+    <div class="topbar"><h2><?= icon('help') ?> キーの取得ガイド</h2>
+        <span class="grow"></span>
+        <?php if ($canEditGuide): ?><button class="btn" type="button" onclick="openGuide({})"><?= icon('plus', 15) ?> 項目を追加</button><?php endif; ?>
+    </div>
+    <?php if ($flashMsg): ?><div class="flash <?= h($flashMsg[0]) ?>"><?= nl2br(h($flashMsg[1])) ?></div><?php endif; ?>
+    <p class="hint" style="margin:0 0 14px">各コスト取得キーを「管理 → コスト取得キー → キーを追加」で登録するときに、ここを見れば必要な項目と取得場所がわかります。</p>
+
+    <div class="guide-grid">
+        <?php foreach ($guides as $g): ?>
+            <div class="panel guide-card">
+                <h3 style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                    <?= icon('key', 16) ?> <?= h($g['title']) ?>
+                    <?php if ($g['edited']): ?><span class="pill" style="background:#fff4e0;color:#92400e">編集済</span><?php endif; ?>
+                </h3>
+                <div class="guide-row"><span class="guide-label">必要なもの</span><span><?= nl2br(h($g['needs'])) ?: '<span class="muted">—</span>' ?></span></div>
+                <div class="guide-row"><span class="guide-label">取得場所</span><span><?= nl2br(h($g['source'])) ?: '<span class="muted">—</span>' ?></span></div>
+                <?php if (trim((string) $g['url']) !== ''): ?>
+                    <div class="guide-row"><span class="guide-label">リンク</span><a href="<?= h($g['url']) ?>" target="_blank" rel="noopener" class="product-link"><?= h($g['url']) ?> ↗</a></div>
+                <?php endif; ?>
+                <?php if ($canEditGuide): ?>
+                <div style="margin-top:10px;display:flex;gap:6px">
+                    <button class="link" type="button" onclick='openGuide(<?= json_encode(["ckey"=>$g["ckey"],"title"=>$g["title"],"needs"=>$g["needs"],"source"=>$g["source"],"url"=>$g["url"]], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
+                    <?php if ($g['edited']): ?>
+                    <form method="post" style="display:inline" onsubmit="return confirm('「<?= h($g['title']) ?>」を<?= $g['custom'] ? '削除' : '既定に戻' ?>しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_guide"><input type="hidden" name="ckey" value="<?= h($g['ckey']) ?>"><button class="link danger" type="submit"><?= $g['custom'] ? '削除' : '既定に戻す' ?></button></form>
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
+            </div>
+        <?php endforeach; ?>
+    </div>
+
+    <a class="btn" href="index.php" style="margin-top:16px"><?= icon('left', 15) ?> ダッシュボードに戻る</a>
+</main>
+</div>
+<?php if ($canEditGuide): ?>
+<dialog id="guideDialog">
+    <form method="post">
+        <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+        <input type="hidden" name="action" value="save_guide">
+        <input type="hidden" name="ckey" id="gf_ckey" value="">
+        <div class="modal-head" id="guideModalTitle">ガイドを編集</div>
+        <div class="modal-body">
+            <div class="grid">
+                <div class="field full"><label>タイトル <span style="color:#b42318">*</span></label><input name="title" id="gf_title" required placeholder="例: OpenAI（自動取得◯）"></div>
+                <div class="field full"><label>必要なもの</label><textarea name="needs" id="gf_needs" rows="3" placeholder="保存時に入れる項目（種別 / アカウントID欄 / キー欄 など）"></textarea></div>
+                <div class="field full"><label>取得場所</label><textarea name="source" id="gf_source" rows="3" placeholder="どの画面で取得できるか"></textarea></div>
+                <div class="field full"><label>リンク（URL）</label><input name="url" id="gf_url" type="url" placeholder="https://..."></div>
+            </div>
+        </div>
+        <div class="modal-foot">
+            <button type="button" onclick="document.getElementById('guideDialog').close()">キャンセル</button>
+            <button type="submit" class="primary">保存</button>
+        </div>
+    </form>
+</dialog>
+<script>
+    const guideDialog = document.getElementById('guideDialog');
+    function openGuide(g) {
+        g = g || {};
+        document.getElementById('guideModalTitle').textContent = g.ckey ? 'ガイドを編集' : '項目を追加';
+        document.getElementById('gf_ckey').value = g.ckey ?? '';
+        document.getElementById('gf_title').value = g.title ?? '';
+        document.getElementById('gf_needs').value = g.needs ?? '';
+        document.getElementById('gf_source').value = g.source ?? '';
+        document.getElementById('gf_url').value = g.url ?? '';
+        guideDialog.showModal();
+    }
+</script>
+<?php endif; ?>
+</body></html>
+<?php exit; endif; ?>
 <?php
 /* ================================================================== *
  *  管理ページ（route=manage）：コスト取得キー＋プロジェクト箱の管理
@@ -1646,6 +1779,7 @@ if ($route === 'product'):
     <a class="nav" href="index.php"><?= icon('dashboard') ?> ダッシュボード</a>
     <?php if (can_manage()): ?><a class="nav" href="<?= h(app_url('scan')) ?>"><?= icon('search') ?> スキャン</a><?php endif; ?>
     <a class="nav" href="<?= h(app_url('tokens')) ?>"><?= icon('key') ?> トークン</a>    <?php if (can_edit()): ?><a class="nav" href="<?= h(app_url('manage')) ?>"><?= icon('gear') ?> 管理</a><?php endif; ?>
+    <a class="nav" href="<?= h(app_url('guide')) ?>"><?= icon('help') ?> キーの取得ガイド</a>
     <a class="nav" href="groups.php"><?= icon('users') ?> グループ管理</a>
     <div class="navlabel">アカウント</div>
     <div class="who">
@@ -1840,6 +1974,7 @@ if ($route === 'product'):
     <a class="nav active" href="index.php"><?= icon('dashboard') ?> ダッシュボード</a>
     <?php if (can_manage()): ?><a class="nav" href="<?= h(app_url('scan')) ?>"><?= icon('search') ?> スキャン</a><?php endif; ?>
     <a class="nav" href="<?= h(app_url('tokens')) ?>"><?= icon('key') ?> トークン</a>    <?php if (can_edit()): ?><a class="nav" href="<?= h(app_url('manage')) ?>"><?= icon('gear') ?> 管理</a><?php endif; ?>
+    <a class="nav" href="<?= h(app_url('guide')) ?>"><?= icon('help') ?> キーの取得ガイド</a>
     <a class="nav" href="groups.php"><?= icon('users') ?> グループ管理</a>
     <div class="navlabel">アカウント</div>
     <div class="who">
