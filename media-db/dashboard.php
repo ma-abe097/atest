@@ -54,17 +54,41 @@ require __DIR__ . '/layout_top.php';
                             <h4 class="font-bold text-gray-900">{{ client.name }}</h4>
                             <span class="text-xs text-gray-500 bg-white px-2 py-1 rounded border">{{ client.ourService }}</span>
                         </div>
-                        <div class="text-sm text-gray-600 mb-2">受注日: <span class="font-bold text-gray-800">{{ client.orderDate }}</span> / 業界: {{ client.industry }}</div>
+                        <div class="text-sm text-gray-600 mb-1">受注日: <span class="font-bold text-gray-800">{{ client.orderDate }}</span> / 業界: {{ client.industry }}</div>
+                        <div v-if="client.address" class="text-sm text-gray-600 mb-1">住所: <span class="text-gray-800">{{ client.address }}</span></div>
+                        <div class="text-sm text-gray-600 mb-2 flex items-center gap-1">
+                            <span>受注リスト元:</span>
+                            <span v-if="sourceMedia(client)" class="inline-flex items-center text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded">
+                                {{ sourceMedia(client).name }}
+                            </span>
+                            <span v-else class="text-xs text-gray-400 italic">未設定</span>
+                        </div>
 
                         <div class="mt-3 pt-3 border-t border-gray-200">
-                            <p class="text-xs font-medium text-gray-500 mb-1">他に利用している媒体:</p>
-                            <div class="flex flex-wrap gap-1">
-                                <span v-for="media in getMediaDetails(client.usedMediaIds)" :key="media.id"
-                                      class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-white border border-gray-200 text-gray-700 shadow-sm">
-                                    {{ media.name }}
-                                </span>
+                            <p class="text-xs font-medium text-gray-500 mb-2">他に利用している媒体（「会社名＋住所」で検索して確認）:</p>
+                            <div class="flex flex-col gap-1.5">
+                                <div v-for="media in getMediaDetails(client.usedMediaIds)" :key="media.id"
+                                     class="flex items-center justify-between gap-2 bg-white border border-gray-200 rounded px-2 py-1.5 shadow-sm">
+                                    <div class="flex items-center gap-2 min-w-0">
+                                        <span class="text-sm font-medium text-gray-700 shrink-0">{{ media.name }}</span>
+                                        <span v-if="hasDomain(media)" class="text-[10px] text-gray-400 truncate">{{ media.domain }}</span>
+                                    </div>
+                                    <div class="flex items-center gap-1 shrink-0">
+                                        <a :href="searchUrl(client, media)" target="_blank" rel="noopener"
+                                           class="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:bg-blue-50 border border-blue-100 rounded px-2 py-0.5"
+                                           :title="client.name + ' を ' + media.name + ' 内で検索（' + (strippedAddress(client) || '住所未登録') + '）'">
+                                            <i data-lucide="search" class="w-3 h-3"></i> 検索
+                                        </a>
+                                        <a v-if="hasDomain(media)" :href="siteUrl(media)" target="_blank" rel="noopener"
+                                           class="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:bg-gray-50 border border-gray-200 rounded px-2 py-0.5"
+                                           :title="media.name + ' のサイトを開く'">
+                                            <i data-lucide="external-link" class="w-3 h-3"></i> サイト
+                                        </a>
+                                    </div>
+                                </div>
                                 <span v-if="client.usedMediaIds.length === 0" class="text-xs text-gray-400 italic">情報なし</span>
                             </div>
+                            <p v-if="!client.address" class="text-[11px] text-amber-600 mt-1.5">※住所が未登録です。登録すると「会社名＋住所」検索の精度が上がります（データ登録・読込から追記できます）。</p>
                         </div>
                     </div>
                 </div>

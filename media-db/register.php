@@ -37,6 +37,18 @@ require __DIR__ . '/layout_top.php';
                         <label class="block text-sm font-medium text-gray-700 mb-1">受注日</label>
                         <input type="date" v-model="newClient.orderDate" class="w-full border border-gray-300 rounded-md p-2 text-sm bg-white focus:ring-blue-500 focus:border-blue-500">
                     </div>
+                    <div class="col-span-2">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">住所</label>
+                        <input type="text" v-model="newClient.address" placeholder="東京都渋谷区神南1-2-3" class="w-full border border-gray-300 rounded-md p-2 text-sm bg-white focus:ring-blue-500 focus:border-blue-500">
+                        <p class="text-xs text-gray-500 mt-1">※ダッシュボードの「会社名＋住所」検索に使います（番地は自動で除いて検索）。</p>
+                    </div>
+                    <div class="col-span-2">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">受注リスト元（獲得元の媒体）</label>
+                        <select v-model="newClient.sourceMediaId" class="w-full border border-gray-300 rounded-md p-2 text-sm bg-white focus:ring-blue-500 focus:border-blue-500">
+                            <option value="">-- 選択しない --</option>
+                            <option v-for="media in mediaList" :key="media.id" :value="media.id">{{ media.name }}</option>
+                        </select>
+                    </div>
                 </div>
 
                 <div>
@@ -75,10 +87,11 @@ require __DIR__ . '/layout_top.php';
             </h3>
             <p class="text-sm text-gray-600 mb-4">
                 Excelの表をコピーして下の枠に貼り付けるか、CSVのテキストを貼り付けてください。
-                <br><span class="font-bold text-red-500 text-xs">フォーマット: 顧客名, 業界, 自社サービス, 受注日(YYYY-MM-DD), 利用媒体(カンマ区切り)</span>
+                <br><span class="font-bold text-red-500 text-xs">フォーマット: 顧客名, 業界, 自社サービス, 受注日(YYYY-MM-DD), 住所, リスト元媒体, 利用媒体(カンマ区切り)</span>
+                <br><span class="text-xs text-gray-500">※住所・リスト元媒体は空でもOK。利用媒体は必ず一番最後の列に置いてください。</span>
             </p>
 
-            <textarea v-model="importText" rows="10" placeholder="株式会社A&#9;IT&#9;SEO&#9;2026-06-02&#9;イツザイ,Sansan&#10;株式会社B&#9;建設&#9;HP制作&#9;2026-06-01&#9;リクナビ"
+            <textarea v-model="importText" rows="10" placeholder="株式会社A&#9;IT&#9;SEO&#9;2026-06-02&#9;東京都渋谷区神南&#9;イツザイ&#9;イツザイ,Sansan&#10;株式会社B&#9;建設&#9;HP制作&#9;2026-06-01&#9;大阪府大阪市北区梅田&#9;リクナビ&#9;リクナビ"
                       class="w-full border border-gray-300 rounded-md p-3 text-sm font-mono focus:ring-blue-500 focus:border-blue-500 mb-4 bg-gray-50 whitespace-pre"></textarea>
 
             <button @click="processImport" :disabled="store.isSyncing" class="w-full bg-green-600 text-white font-medium py-2 px-4 rounded-md hover:bg-green-700 transition shadow-sm flex justify-center items-center disabled:opacity-50">

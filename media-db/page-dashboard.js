@@ -49,6 +49,33 @@
                 }
             };
 
+            // 受注リスト元（獲得元の媒体）
+            const sourceMedia = (client) => store.media.find(m => m.id === client.sourceMediaId) || null;
+
+            // 媒体が実在ドメインを持つか（手動追加の '-' や 'unknown' は除外）
+            const hasDomain = (media) => {
+                const d = (media.domain || '').trim();
+                return d !== '' && d !== '-' && d !== 'unknown' && d.includes('.');
+            };
+            const siteUrl = (media) => 'https://' + (media.domain || '').trim().replace(/^https?:\/\//, '');
+
+            // 住所から番地（最初の数字以降）を落として「町名まで」にする
+            const strippedAddress = (client) => {
+                const a = (client.address || '').trim();
+                if (!a) return '';
+                const cut = a.replace(/[0-9０-９].*$/, '').replace(/[\s　]+$/, '').trim();
+                return cut || a;
+            };
+
+            // 会社名＋住所(番地抜き)で、その媒体サイト内をGoogle検索するURL
+            const searchUrl = (client, media) => {
+                const parts = ['"' + (client.name || '') + '"'];
+                const addr = strippedAddress(client);
+                if (addr) parts.push('"' + addr + '"');
+                parts.push(hasDomain(media) ? 'site:' + media.domain.trim().replace(/^https?:\/\//, '') : media.name);
+                return 'https://www.google.com/search?q=' + encodeURIComponent(parts.join(' '));
+            };
+
             const exportCsv = () => {
                 const label = (dateRangeText.value || '全期間').replace(/ /g, '');
                 exportClientsCSV(filteredClientsByDate.value, `受注リスト_${label}.csv`);
@@ -63,6 +90,7 @@
                 filterStartDate, filterEndDate, resetDateFilter,
                 filteredClientsByDate, dateRangeText, periodMediaRanking,
                 getMediaDetails, deleteClient, exportCsv,
+                sourceMedia, hasDomain, siteUrl, strippedAddress, searchUrl,
             };
         }
     }).mount('#app');

@@ -12,11 +12,22 @@
     /** ランダムなID生成（衝突しにくい接頭辞付き） */
     const genId = (prefix) => prefix + Date.now() + Math.floor(Math.random() * 100000);
 
+    /** 媒体名から既存IDを返す。無ければ新規作成してIDを返す。 */
+    const findOrCreateMedia = (name, domain = '-') => {
+        const n = (name || '').trim();
+        if (!n) return null;
+        const found = store.media.find(m => m.name.toLowerCase() === n.toLowerCase());
+        if (found) return found.id;
+        const id = genId('m');
+        store.media.push({ id, name: n, domain });
+        return id;
+    };
+
     createApp({
         setup() {
             const mediaList = computed(() => store.media);
 
-            const newClient = ref({ name: '', industry: '', ourService: '', orderDate: todayStr, usedMediaIds: [] });
+            const newClient = ref({ name: '', industry: '', ourService: '', orderDate: todayStr, address: '', sourceMediaId: '', usedMediaIds: [] });
             const newClientManualFlags = ref('');
             const successMessage = ref('');
 
@@ -44,15 +55,8 @@
                 if (newClientManualFlags.value.trim() !== '') {
                     const manualFlags = newClientManualFlags.value.split(/[,、]+/).map(s => s.trim()).filter(Boolean);
                     manualFlags.forEach(flagName => {
-                        const found = store.media.find(m => m.name.toLowerCase() === flagName.toLowerCase());
-                        let id;
-                        if (found) {
-                            id = found.id;
-                        } else {
-                            id = genId('m');
-                            store.media.push({ id, name: flagName, domain: '-' });
-                        }
-                        if (!finalMediaIds.includes(id)) finalMediaIds.push(id);
+                        const id = findOrCreateMedia(flagName);
+                        if (id && !finalMediaIds.includes(id)) finalMediaIds.push(id);
                     });
                 }
 
@@ -62,10 +66,12 @@
                     industry: newClient.value.industry,
                     ourService: newClient.value.ourService,
                     orderDate: newClient.value.orderDate,
+                    address: newClient.value.address,
+                    sourceMediaId: newClient.value.sourceMediaId,
                     usedMediaIds: finalMediaIds,
                 });
 
-                newClient.value = { name: '', industry: '', ourService: '', orderDate: todayStr, usedMediaIds: [] };
+                newClient.value = { name: '', industry: '', ourService: '', orderDate: todayStr, address: '', sourceMediaId: '', usedMediaIds: [] };
                 newClientManualFlags.value = '';
                 successMessage.value = '顧客データを1件登録しました！';
                 setTimeout(() => { successMessage.value = ''; }, 3000);
@@ -88,11 +94,17 @@
                     const columns = line.split(delimiter).map(c => c.trim());
                     if (columns.length < 1 || !columns[0]) { skipCount++; return; }
 
+                    // 列: 顧客名, 業界, 自社サービス, 受注日, 住所, リスト元媒体, 利用媒体(最後・カンマ区切り)
                     const name = columns[0];
                     const industry = columns[1] || '';
                     const ourService = columns[2] || '';
                     const orderDate = columns[3] || todayStr;
-                    const mediaNamesStr = columns[4] || '';
+                    const address = columns[4] || '';
+                    const sourceMediaName = columns[5] || '';
+                    // 利用媒体は最後の列。カンマ区切りで内部にカンマを含むため、6列目以降を結合して扱う。
+                    const mediaNamesStr = columns.slice(6).join(delimiter);
+
+                    const sourceMediaId = sourceMediaName ? findOrCreateMedia(sourceMediaName) : '';
 
                     const mediaNames = mediaNamesStr.split(/[,、\s]+/).filter(Boolean);
                     const mediaIds = [];
@@ -109,7 +121,7 @@
 
                     store.clients.push({
                         id: genId('c'),
-                        name, industry, ourService, orderDate,
+                        name, industry, ourService, orderDate, address, sourceMediaId,
                         usedMediaIds: mediaIds,
                     });
                     successCount++;
