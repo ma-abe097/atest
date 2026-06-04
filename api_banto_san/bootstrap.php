@@ -558,6 +558,7 @@ function render_sidebar(string $active = ''): void
     <?php if (can_manage()): ?><a class="nav<?= $a('scan') ?>" href="<?= h(app_url('scan')) ?>"><?= icon('search') ?> スキャン</a><?php endif; ?>
     <a class="nav<?= $a('tokens') ?>" href="<?= h(app_url('tokens')) ?>"><?= icon('key') ?> トークン</a>
     <?php if (can_edit()): ?><a class="nav<?= $a('manage') ?>" href="<?= h(app_url('manage')) ?>"><?= icon('gear') ?> 管理</a><?php endif; ?>
+    <?php if (can_edit()): ?><a class="nav<?= $a('accounts') ?>" href="<?= h(app_url('accounts')) ?>"><?= icon('lock') ?> アカウント管理</a><?php endif; ?>
     <a class="nav<?= $a('guide') ?>" href="<?= h(app_url('guide')) ?>"><?= icon('help') ?> キーの取得ガイド</a>
     <a class="nav<?= $a('groups') ?>" href="groups.php"><?= icon('users') ?> グループ管理</a>
     <div class="navlabel">アカウント</div>
@@ -802,6 +803,25 @@ function db(): PDO
         )
     SQL);
 
+    // アカウント（ID・パスワード）管理。パスワードは暗号化保存。
+    $pdo->exec(<<<SQL
+        CREATE TABLE IF NOT EXISTS accounts (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_id    INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+            category    TEXT    NOT NULL DEFAULT '',
+            service     TEXT    NOT NULL,
+            login_id    TEXT    NOT NULL DEFAULT '',
+            secret_enc  TEXT,
+            secret_hint TEXT,
+            secret_fp   TEXT,
+            url         TEXT    NOT NULL DEFAULT '',
+            notes       TEXT    NOT NULL DEFAULT '',
+            updated_by  TEXT    NOT NULL DEFAULT '',
+            created_at  TEXT    NOT NULL,
+            updated_at  TEXT    NOT NULL
+        )
+    SQL);
+
     // キー取得ガイド（プロバイダごとの「必要なもの・取得場所」。既定を上書き編集できる）
     $pdo->exec(<<<SQL
         CREATE TABLE IF NOT EXISTS cost_guides (
@@ -1019,6 +1039,62 @@ function delete_credential(int $gid, int $id): void
     db()->prepare('UPDATE projects SET credential_id = NULL WHERE credential_id = :id AND group_id = :g')->execute([':id' => $id, ':g' => $gid]);
     db()->prepare('UPDATE catalog_pref SET credential_id = NULL WHERE credential_id = :id AND group_id = :g')->execute([':id' => $id, ':g' => $gid]);
     db()->prepare('DELETE FROM credentials WHERE id = :id AND group_id = :g')->execute([':id' => $id, ':g' => $gid]);
+}
+
+/* ------------------------------------------------------------------ *
+ *  アカウント（ID・パスワード）管理。パスワードは暗号化保存。
+ * ------------------------------------------------------------------ */
+function list_accounts(int $gid): array
+{
+    $st = db()->prepare('SELECT id, category, service, login_id, secret_hint, url, notes, updated_by, updated_at FROM accounts WHERE group_id = :g ORDER BY category, service');
+    $st->execute([':g' => $gid]);
+    return $st->fetchAll();
+}
+
+function get_account(int $gid, int $id): ?array
+{
+    $st = db()->prepare('SELECT * FROM accounts WHERE id = :id AND group_id = :g');
+    $st->execute([':id' => $id, ':g' => $gid]);
+    return $st->fetch() ?: null;
+}
+
+function account_categories(int $gid): array
+{
+    $st = db()->prepare("SELECT DISTINCT category FROM accounts WHERE group_id = :g AND category <> '' ORDER BY category");
+    $st->execute([':g' => $gid]);
+    return $st->fetchAll(PDO::FETCH_COLUMN);
+}
+
+/** アカウントを作成/更新。$password 空なら既存PWを保持。戻り値: id */
+function save_account(int $gid, ?int $id, string $category, string $service, string $login, string $url, string $notes, string $password, string $by): int
+{
+    $now = now();
+    if ($id === null) {
+        db()->prepare('INSERT INTO accounts (group_id, category, service, login_id, url, notes, updated_by, created_at, updated_at) VALUES (:g,:cat,:s,:l,:u,:n,:by,:c,:c)')
+            ->execute([':g' => $gid, ':cat' => $category, ':s' => $service, ':l' => $login, ':u' => $url, ':n' => $notes, ':by' => $by, ':c' => $now]);
+        $id = (int) db()->lastInsertId();
+    } else {
+        db()->prepare('UPDATE accounts SET category=:cat, service=:s, login_id=:l, url=:u, notes=:n, updated_by=:by, updated_at=:t WHERE id=:id AND group_id=:g')
+            ->execute([':cat' => $category, ':s' => $service, ':l' => $login, ':u' => $url, ':n' => $notes, ':by' => $by, ':t' => $now, ':id' => $id, ':g' => $gid]);
+    }
+    if ($password !== '' && encryption_ready()) {
+        db()->prepare('UPDATE accounts SET secret_enc=:e, secret_hint=:h, secret_fp=:f WHERE id=:id AND group_id=:g')
+            ->execute([':e' => encrypt_secret($password), ':h' => secret_hint($password), ':f' => secret_fingerprint($password), ':id' => $id, ':g' => $gid]);
+    }
+    return $id;
+}
+
+function delete_account(int $gid, int $id): void
+{
+    db()->prepare('DELETE FROM accounts WHERE id = :id AND group_id = :g')->execute([':id' => $id, ':g' => $gid]);
+}
+
+/** アカウントの平文パスワードを返す（表示/コピー用。member以上が前提） */
+function reveal_account_password(int $gid, int $id): ?string
+{
+    $a = get_account($gid, $id);
+    if (!$a) { return null; }
+    return decrypt_secret($a['secret_enc'] ?? null);
 }
 
 /** プロダクト既定のキーID（catalog_pref.credential_id） */
