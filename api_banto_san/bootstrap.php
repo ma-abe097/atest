@@ -296,7 +296,9 @@ function render_styles(): void { ?>
         --radius:16px; --shadow:0 6px 24px rgba(31,41,55,.06);
     }
     * { box-sizing:border-box; }
-    body { margin:0; background:var(--bg); color:var(--ink);
+    body { margin:0; background-color:var(--bg); color:var(--ink);
+        background-image:linear-gradient(rgba(47,122,214,.05) 1px, transparent 1px), linear-gradient(90deg, rgba(47,122,214,.05) 1px, transparent 1px);
+        background-size:28px 28px;
         font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP",Meiryo,sans-serif; line-height:1.6; }
 
     /* ===== モダン・サイドバー レイアウト（ダッシュボード用） ===== */
@@ -312,6 +314,9 @@ function render_styles(): void { ?>
     .sidebar a.nav.active { background:var(--accent); color:#fff; box-shadow:0 6px 16px rgba(47,122,214,.34); }
     .sidebar .who { display:flex; align-items:center; gap:8px; font-size:13px; padding:10px 8px; border-top:1px solid var(--line); margin-top:14px; }
     .sidebar .who img { width:30px; height:30px; border-radius:50%; }
+    .sidebar .who img.banto-mini { background:#eef5fc; object-fit:contain; }
+    .banto-footer { margin-top:12px; padding-top:10px; border-top:1px solid var(--line); font-size:11.5px; color:var(--muted); display:flex; align-items:center; gap:6px; }
+    .banto-footer img { width:20px; height:20px; }
     .main { flex:1; min-width:0; padding:22px 26px; }
     .topbar { display:flex; align-items:center; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
     .topbar .grow { flex:1; }
@@ -346,19 +351,27 @@ function render_styles(): void { ?>
     .hero-amount .cur { font-size:18px; font-weight:700; opacity:.85; margin-right:4px; }
     .hero-amount.muted { color:#cfd6e6; }
     .jpyhint { font-size:.5em; font-weight:400; opacity:.7; margin-left:2px; white-space:nowrap; }
-    /* 暖簾タブ（アカウントのカテゴリ切替） */
-    .noren-tabs { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
+    /* 暖簾タブ（アカウントのカテゴリ切替）＝紺布＋金の突っ張り棒＋裾の切れ込み */
+    .noren-tabs { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:22px; }
     .noren-tab { position:relative; border:none; cursor:pointer; background:var(--accent); color:#fff; font-weight:700; font-size:13px;
-        padding:11px 16px 12px; border-radius:0 0 10px 10px; box-shadow:0 5px 12px rgba(47,122,214,.22);
-        border-top:5px solid; border-image:repeating-linear-gradient(90deg,var(--gold) 0 13px,#fff 13px 26px) 1; opacity:.78; transition:opacity .12s, transform .12s; }
+        padding:12px 16px 12px; border-top:5px solid var(--gold); border-radius:3px 3px 0 0;
+        box-shadow:0 4px 10px rgba(47,122,214,.20); opacity:.8; transition:opacity .12s, transform .12s; margin-bottom:9px; }
+    .noren-tab::after { content:""; position:absolute; left:0; right:0; bottom:-9px; height:9px; background:inherit;
+        -webkit-mask:repeating-linear-gradient(90deg,#000 0 16px, transparent 16px 23px);
+                mask:repeating-linear-gradient(90deg,#000 0 16px, transparent 16px 23px); }
     .noren-tab:hover { opacity:1; }
-    .noren-tab.active { opacity:1; transform:translateY(3px); background:var(--accent-d); }
+    .noren-tab.active { opacity:1; background:var(--accent-d); }
     .noren-tab .nt-n { display:inline-block; margin-left:6px; background:rgba(255,255,255,.25); border-radius:999px; padding:0 7px; font-size:11px; }
-    /* 暖簾の見出しリボン */
-    .noren-head { display:flex; align-items:center; gap:10px; margin:-18px -20px 12px; padding:12px 18px 14px; color:#fff;
-        background:linear-gradient(135deg,var(--accent),#5aa6ec); border-radius:var(--radius) var(--radius) 0 0;
-        border-bottom:5px solid; border-image:repeating-linear-gradient(90deg,var(--gold) 0 14px,#fff 14px 28px) 1; }
-    .noren-head .noren-cloth { font-weight:800; font-size:15px; }
+    /* 暖簾の見出しリボン＝紺布、上に金の棒、裾は切れ込み（のれんスリット） */
+    .noren-head { position:relative; display:flex; align-items:center; gap:10px; margin:-18px -20px 22px; padding:12px 18px 14px; color:#fff;
+        background:var(--accent); border-top:5px solid var(--gold); border-radius:var(--radius) var(--radius) 0 0; }
+    .noren-head::after { content:""; position:absolute; left:0; right:0; bottom:-11px; height:11px; background:var(--accent);
+        -webkit-mask:repeating-linear-gradient(90deg,#000 0 30px, transparent 30px 40px);
+                mask:repeating-linear-gradient(90deg,#000 0 30px, transparent 30px 40px); }
+    .noren-head .noren-cloth { font-weight:800; font-size:15px; letter-spacing:.04em; }
+    /* 湯気の仕切り線 */
+    .steam-hr { height:14px; margin:4px 0 18px; background-repeat:repeat-x; background-position:center;
+        background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='60' height='14' viewBox='0 0 60 14'><path d='M0 9 Q15 0 30 9 T60 9' fill='none' stroke='%232f7ad6' stroke-width='2' opacity='0.45'/></svg>"); }
     .hero-stats { display:flex; gap:22px; margin-top:auto; padding-top:16px; }
     .hero-stats > div { display:flex; flex-direction:column; }
     .hero-stats .n { font-size:22px; font-weight:800; }
@@ -576,13 +589,14 @@ function render_sidebar(string $active = ''): void
     <a class="nav<?= $a('groups') ?>" href="groups.php"><?= icon('users') ?> グループ管理</a>
     <div class="navlabel">アカウント</div>
     <div class="who">
-        <?php if (!empty($user['avatar_url'])): ?><img src="<?= h($user['avatar_url']) ?>" alt=""><?php endif; ?>
+        <?php if (!empty($user['avatar_url'])): ?><img src="<?= h($user['avatar_url']) ?>" alt=""><?php else: ?><img src="<?= h(app_base_url()) ?>/duck2.png" alt="" class="banto-mini"><?php endif; ?>
         <div>
             <div style="font-weight:700;font-size:13px"><?= h(($user['name'] ?? '') ?: ($user['email'] ?? '')) ?></div>
             <?php if ($role !== null): ?><div class="role-badge"><?= h(ROLES[$role] ?? $role) ?></div><?php endif; ?>
         </div>
     </div>
     <a class="nav" href="<?= h(app_url('logout')) ?>"><?= icon('logout') ?> ログアウト</a>
+    <div class="banto-footer"><img src="<?= h(app_base_url()) ?>/duck2.png" alt="" class="banto-mini"> ♨ 本日も営業中</div>
 </aside>
 <?php
 }
