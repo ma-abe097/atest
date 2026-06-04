@@ -164,26 +164,26 @@ function icon(string $name, int $size = 18): string
 function duck_svg(int $px = 8): string
 {
     $grid = [
-        '................',
-        '....WWWWW.......',
-        '...WnWWWnW......',
-        '...WWWWWWW......',
-        '....YYYYYY......',
-        '...YYYYYYYY.....',
-        '...YYeLYYYYBBB..',
-        '...YYYYYYYYBBB..',
-        '..YYYYYYYYYY....',
-        '.YYYYYYYYYYYYY..',
-        'YYYYYYYYYYYYYYY.',
-        'YYYYYYYYYYYYYYYY',
-        'YYYYYYYYYYYYYYY.',
-        '.YYYYYYYYYYYYY..',
-        '..oYYYYYYYYYo...',
-        '... wwww wwww...',
+        '..................',
+        '.........WWWWW....',
+        '........WnWnWnW...',
+        '........WWWWWWW...',
+        '.........YYYYYY...',
+        '........YYYYYYYY..',
+        '........YYYYeYYYBB',
+        '........YYYYYYYYBB',
+        '.....YYYYYYYYYYY..',
+        '...YYYYYYYYYYYYY..',
+        '..YYYYYYYYYYYYYY..',
+        '.YYYYggggYYYYYYY..',
+        '.YYYYggggYYYYYYY..',
+        '..YYYYYYYYYYYYYY..',
+        '...YYYYYYYYYYYY...',
+        '....oooooooooo....',
     ];
-    $map = ['Y' => '#FFCE2B', 'o' => '#E2960F', 'e' => '#20303A', 'L' => '#FFFFFF',
-            'B' => '#FF7A30', 'W' => '#FFFFFF', 'n' => '#1F3A8A', 'w' => '#7FC4F2'];
-    $w = 16; $n = count($grid);
+    $map = ['Y' => '#FFCE2B', 'g' => '#EFA417', 'o' => '#E2960F', 'e' => '#20303A',
+            'B' => '#FF7A30', 'W' => '#FFFFFF', 'n' => '#1F3A8A'];
+    $w = 18; $n = count($grid);
     $out = '<svg xmlns="http://www.w3.org/2000/svg" width="' . ($w * $px) . '" height="' . ($n * $px) . '" viewBox="0 0 ' . ($w * $px) . ' ' . ($n * $px) . '" shape-rendering="crispEdges" class="duck" aria-hidden="true">';
     foreach ($grid as $y => $row) {
         $len = strlen($row);
