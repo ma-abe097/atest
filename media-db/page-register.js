@@ -9,8 +9,6 @@
     const { createApp, ref, computed, onMounted, watch, nextTick } = Vue;
     const { store, exportClientsCSV, refreshIcons } = AppCore;
 
-    const todayStr = new Date().toISOString().slice(0, 10);
-
     /** ランダムなID生成（衝突しにくい接頭辞付き） */
     const genId = (prefix) => prefix + Date.now() + Math.floor(Math.random() * 100000);
 
@@ -28,24 +26,74 @@
     /** リスト元媒体名から「申込日：…」等の余分な注記を取り除く */
     const cleanMediaName = (s) => (s || '').replace(/[\s　]*申込日[：:].*$/, '').trim();
 
-    /** 受注日を YYYY-MM-DD に整える（2026/6/4・2026.6.4・Excelシリアル値などに対応） */
-    const normalizeDate = (s) => {
-        s = (s || '').trim();
-        if (!s) return todayStr;
-        const m = s.match(/^(\d{4})[\/\-.年](\d{1,2})[\/\-.月](\d{1,2})/);
-        if (m) {
-            return `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
-        }
-        // Excelのシリアル日付値（念のため）
-        if (/^\d+(\.\d+)?$/.test(s)) {
-            const n = parseFloat(s);
-            if (n > 20000 && n < 80000) {
-                const dt = new Date(Math.round((n - 25569) * 86400000));
-                if (!isNaN(dt)) return dt.toISOString().slice(0, 10);
+    /** Dateを YYYY-MM-DD（ローカル）に整形 */
+    const ymd = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+
+    /**
+     * その年の日本の祝日（振替休日・国民の休日を含む）の Set を作る。
+     * 1980〜2099年で有効（春分/秋分は計算式）。年が変わっても自動対応。
+     */
+    const jpHolidays = (year) => {
+        const set = new Set();
+        const f = (m, d) => `${year}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        // 固定日の祝日
+        [[1, 1], [2, 11], [2, 23], [4, 29], [5, 3], [5, 4], [5, 5], [8, 11], [11, 3], [11, 23]]
+            .forEach(([m, d]) => set.add(f(m, d)));
+        // ハッピーマンデー（第n月曜）
+        const nthMon = (m, n) => {
+            let c = 0;
+            for (let d = 1; d <= 31; d++) {
+                const dt = new Date(year, m - 1, d);
+                if (dt.getMonth() !== m - 1) break;
+                if (dt.getDay() === 1 && ++c === n) return d;
             }
-        }
-        return s;
+            return null;
+        };
+        set.add(f(1, nthMon(1, 2)));   // 成人の日
+        set.add(f(7, nthMon(7, 3)));   // 海の日
+        set.add(f(9, nthMon(9, 3)));   // 敬老の日
+        set.add(f(10, nthMon(10, 2))); // スポーツの日
+        // 春分の日・秋分の日（計算式）
+        set.add(f(3, Math.floor(20.8431 + 0.242194 * (year - 1980) - Math.floor((year - 1980) / 4))));
+        set.add(f(9, Math.floor(23.2488 + 0.242194 * (year - 1980) - Math.floor((year - 1980) / 4))));
+        const base = [...set];
+        // 振替休日（日曜が祝日なら次の非祝日を休日に）
+        base.forEach(s => {
+            const dt = new Date(s + 'T00:00:00');
+            if (dt.getDay() === 0) {
+                const nx = new Date(dt);
+                do { nx.setDate(nx.getDate() + 1); } while (set.has(ymd(nx)));
+                set.add(ymd(nx));
+            }
+        });
+        // 国民の休日（祝日に挟まれた平日）
+        base.forEach(s => {
+            const dt = new Date(s + 'T00:00:00');
+            const mid = new Date(dt); mid.setDate(mid.getDate() + 1);
+            const p2 = new Date(dt); p2.setDate(p2.getDate() + 2);
+            if (base.includes(ymd(p2)) && !set.has(ymd(mid)) && mid.getDay() !== 0) set.add(ymd(mid));
+        });
+        return set;
     };
+
+    const _holidayCache = {};
+    const isHolidayOrWeekend = (dt) => {
+        const day = dt.getDay();
+        if (day === 0 || day === 6) return true; // 日・土
+        const y = dt.getFullYear();
+        if (!_holidayCache[y]) _holidayCache[y] = jpHolidays(y);
+        return _holidayCache[y].has(ymd(dt));
+    };
+
+    /** 基準日(既定は今日)からさかのぼった「前営業日」を YYYY-MM-DD で返す（土日祝・連休を飛ばす） */
+    const previousBusinessDay = (from = new Date()) => {
+        const d = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+        do { d.setDate(d.getDate() - 1); } while (isHolidayOrWeekend(d));
+        return ymd(d);
+    };
+
+    // 取り込み時に使う「前営業日」（ページ表示時点で計算）
+    const prevBizDay = previousBusinessDay();
 
     /** ArrayBuffer を文字列へ。UTF-8で失敗したら Shift_JIS とみなす（Excelの日本語CSV対策）。 */
     const decodeBuffer = (buf) => {
@@ -83,6 +131,19 @@
         return rows;
     };
 
+    /** 空行を除いた行の「列数の中央値」（区切り記号の良し悪しを測る指標） */
+    const medianCols = (rows) => {
+        const counts = rows.filter(r => r.some(c => String(c).trim() !== '')).map(r => r.length).sort((a, b) => a - b);
+        return counts.length ? counts[Math.floor(counts.length / 2)] : 0;
+    };
+
+    /** カンマ区切り・タブ区切りの両方で試し、列が多く取れた方を採用（紛れ込んだタブ等で誤判定しない） */
+    const parseAuto = (text) => {
+        const byComma = parseDelimited(text, ',');
+        const byTab = parseDelimited(text, '\t');
+        return medianCols(byTab) > medianCols(byComma) ? byTab : byComma;
+    };
+
     /** 選択ファイル(Excel/CSV)を 行×列 の二次元配列にして返す（Promise） */
     const parseFileToRows = (file) => new Promise((resolve, reject) => {
         const name = (file.name || '').toLowerCase();
@@ -106,8 +167,7 @@
         } else {
             reader.onload = () => {
                 const text = decodeBuffer(reader.result);
-                const delim = text.includes('\t') ? '\t' : ',';
-                resolve(parseDelimited(text, delim).map(r => r.map(c => c.trim())));
+                resolve(parseAuto(text).map(r => r.map(c => c.trim())));
             };
             reader.readAsArrayBuffer(file);
         }
@@ -117,7 +177,7 @@
         setup() {
             const mediaList = computed(() => store.media);
 
-            const newClient = ref({ name: '', industry: '', orderDate: todayStr, address: '', sourceMediaId: '', usedMediaIds: [] });
+            const newClient = ref({ name: '', industry: '', orderDate: prevBizDay, address: '', sourceMediaId: '', usedMediaIds: [] });
             const newClientManualFlags = ref('');
             const successMessage = ref('');
 
@@ -168,7 +228,7 @@
                     usedMediaIds: finalMediaIds,
                 });
 
-                newClient.value = { name: '', industry: '', orderDate: todayStr, address: '', sourceMediaId: '', usedMediaIds: [] };
+                newClient.value = { name: '', industry: '', orderDate: prevBizDay, address: '', sourceMediaId: '', usedMediaIds: [] };
                 newClientManualFlags.value = '';
                 successMessage.value = '顧客データを1件登録しました！';
                 setTimeout(() => { successMessage.value = ''; }, 3000);
@@ -221,7 +281,8 @@
                     const sourceName = cleanMediaName(cols[2] || '');
                     const sourceMediaId = sourceName ? findOrCreateMedia(sourceName) : '';
                     const industry = (cols[3] || '').trim();
-                    const orderDate = normalizeDate(cols[4] || '');
+                    // 受注日はファイルのE列（＝書き出した日）を使わず、取り込み時の「前営業日」を自動設定
+                    const orderDate = prevBizDay;
 
                     store.clients.push({
                         id: genId('c'),

@@ -87,7 +87,7 @@ require __DIR__ . '/layout_top.php';
             <p class="text-sm text-gray-600 mb-3">
                 Excel(.xlsx) または CSV ファイルを選んで取り込みます。
                 <br><span class="font-bold text-red-500 text-xs">列の順番（FileMaker書き出しのまま）: ①顧客名 ②住所 ③リスト元媒体 ④業種 ⑤受注日</span>
-                <br><span class="text-xs text-gray-500">※見出し行は無くてOK。日付（2026/6/4 等）は自動で YYYY-MM-DD に整えます。「他に利用している媒体」はこの取り込みには含めず、登録後にダッシュボードの検索で確認します。</span>
+                <br><span class="text-xs text-gray-500">※見出し行は無くてOK。<b>受注日はファイルの日付ではなく「前営業日」</b>（土日・祝日・連休は自動でさかのぼり）で登録します。「他に利用している媒体」はこの取り込みには含めません。</span>
             </p>
 
             <!-- ファイル選択エリア -->
