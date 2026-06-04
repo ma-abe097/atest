@@ -487,6 +487,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect_self();
     }
 
+    if ($action === 'save_account') {
+        require_role_at_least($gid, 'member');
+        $aid = isset($_POST['account_id']) && $_POST['account_id'] !== '' ? (int) $_POST['account_id'] : null;
+        $svc = trim((string) ($_POST['service'] ?? ''));
+        if ($svc === '') { flash('err', 'サービス名は必須です。'); redirect_self(); }
+        $pw = (string) ($_POST['password'] ?? '');
+        if ($pw !== '' && !encryption_ready()) { flash('err', 'APP_ENCRYPTION_KEY が未設定のため、パスワードを保存できません。'); redirect_self(); }
+        save_account(
+            $gid, $aid,
+            trim((string) ($_POST['category'] ?? '')), $svc,
+            trim((string) ($_POST['login_id'] ?? '')), trim((string) ($_POST['url'] ?? '')),
+            trim((string) ($_POST['notes'] ?? '')), $pw,
+            (string) ($user['email'] ?? '')
+        );
+        flash('ok', 'アカウントを保存しました。');
+        redirect_self();
+    }
+
+    if ($action === 'delete_account') {
+        require_role_at_least($gid, 'admin');
+        delete_account($gid, (int) ($_POST['account_id'] ?? 0));
+        flash('ok', 'アカウントを削除しました。');
+        redirect_self();
+    }
+
+    if ($action === 'reveal_account') {
+        require_role_at_least($gid, 'member');
+        $pw = reveal_account_password($gid, (int) ($_POST['account_id'] ?? 0));
+        header('Content-Type: application/json');
+        echo json_encode(['password' => $pw]);
+        exit;
+    }
+
     if ($action === 'save_product_alert') {
         require_role_at_least($gid, 'member');
         $prod = (string) ($_POST['product'] ?? '');
@@ -1406,6 +1439,134 @@ function render_modals(string $csrf, array $names, array $credentials): void
     <?php
 }
 ?>
+<?php
+/* ================================================================== *
+ *  アカウント管理ページ（route=accounts）：ID・パスワード
+ * ================================================================== */
+if ($route === 'accounts'):
+    if (!$editable) { header('Location: ' . app_url()); exit; }
+    $accounts = list_accounts($gid);
+    $acctCats = account_categories($gid);
+    // カテゴリーごとにまとめる（空は「その他」）
+    $byCat = [];
+    foreach ($accounts as $a) { $byCat[$a['category'] !== '' ? $a['category'] : 'その他'][] = $a; }
+    ksort($byCat);
+?>
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><?= h(APP_NAME) ?> — アカウント管理</title>
+<?php render_styles(); ?>
+</head>
+<body>
+<div class="layout">
+<?php render_sidebar('accounts'); ?>
+<main class="main">
+    <div class="topbar"><h2><?= icon('lock') ?> アカウント管理（ID・パスワード）</h2>
+        <span class="grow"></span>
+        <button type="button" class="primary" onclick="openAccount({})"><?= icon('plus', 15) ?> アカウントを追加</button>
+    </div>
+    <?php if ($flashMsg): ?><div class="flash <?= h($flashMsg[0]) ?>"><?= nl2br(h($flashMsg[1])) ?></div><?php endif; ?>
+    <?php if (!encryption_ready()): ?><div class="flash" style="background:#fff4e0;color:#92400e">🔐 パスワードを保存するには <code>config.local.php</code> に <code>APP_ENCRYPTION_KEY</code> を設定してください。</div><?php endif; ?>
+    <p class="hint" style="margin:0 0 14px">サービスのログインID・パスワードを暗号化して保管します。パスワードは「表示」を押した時だけ見えます。社内アカウントのみ閲覧可。</p>
+
+    <?php if (!$accounts): ?>
+        <div class="empty">まだ登録がありません。「アカウントを追加」から登録してください。</div>
+    <?php else: foreach ($byCat as $cat => $rows): ?>
+        <div class="panel" style="margin-bottom:16px">
+            <h3 style="display:flex;align-items:center;gap:8px"><?= icon('lock', 15) ?> <?= h($cat) ?> <span class="muted" style="font-weight:400;font-size:13px">（<?= count($rows) ?>）</span></h3>
+            <table>
+                <thead><tr><th>サービス</th><th>ログインID</th><th>パスワード</th><th class="hide-sm">メモ</th><th>操作</th></tr></thead>
+                <tbody>
+                <?php foreach ($rows as $a): ?>
+                    <tr>
+                        <td><strong><?= h($a['service']) ?></strong><?php if ($a['url'] !== ''): ?><br><a href="<?= h($a['url']) ?>" target="_blank" rel="noopener" class="product-link" style="font-size:12px"><?= icon('right', 12) ?> ログイン</a><?php endif; ?></td>
+                        <td><?php if ($a['login_id'] !== ''): ?><code><?= h($a['login_id']) ?></code> <button class="link" type="button" title="コピー" onclick="copyText(<?= htmlspecialchars(json_encode($a['login_id'], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)"><?= icon('copy', 14) ?></button><?php else: ?><span class="muted">—</span><?php endif; ?></td>
+                        <td style="white-space:nowrap">
+                            <?php if ($a['secret_hint']): ?>
+                                <code class="pwmask" id="pw<?= (int) $a['id'] ?>">••••••••</code>
+                                <button class="link" type="button" onclick="revealPw(<?= (int) $a['id'] ?>)" title="表示/隠す"><?= icon('search', 14) ?></button>
+                                <button class="link" type="button" onclick="copyPw(<?= (int) $a['id'] ?>)" title="コピー"><?= icon('copy', 14) ?></button>
+                            <?php else: ?><span class="muted">未設定</span><?php endif; ?>
+                        </td>
+                        <td class="hide-sm note-cell"><?= nl2br(h($a['notes'])) ?: '<span class="muted">—</span>' ?></td>
+                        <td style="white-space:nowrap">
+                            <button class="link" type="button" onclick='openAccount(<?= json_encode(["id"=>(int)$a["id"],"category"=>$a["category"],"service"=>$a["service"],"login_id"=>$a["login_id"],"url"=>$a["url"],"notes"=>$a["notes"],"secret_hint"=>$a["secret_hint"]], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
+                            <?php if (can_manage()): ?><form method="post" style="display:inline" onsubmit="return confirm('「<?= h($a['service']) ?>」を削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_account"><input type="hidden" name="account_id" value="<?= (int) $a['id'] ?>"><button class="link danger" type="submit"><?= icon('trash', 14) ?></button></form><?php endif; ?>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    <?php endforeach; endif; ?>
+
+    <a class="btn" href="index.php"><?= icon('left', 15) ?> ダッシュボードに戻る</a>
+</main>
+</div>
+<div id="abtToast"></div>
+<dialog id="accountDialog">
+    <form method="post">
+        <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+        <input type="hidden" name="action" value="save_account">
+        <input type="hidden" name="account_id" id="af_id" value="">
+        <div class="modal-head" id="accountModalTitle">アカウント</div>
+        <div class="modal-body">
+            <div class="grid">
+                <div class="field"><label>カテゴリー</label><input name="category" id="af_category" list="acctCatList" placeholder="例: API / Google / サーバ"><datalist id="acctCatList"><?php foreach (['API','Google','サーバ・インフラ','ドメイン','SaaS','SNS','その他'] as $c): ?><option value="<?= h($c) ?>"></option><?php endforeach; foreach ($acctCats as $c): ?><option value="<?= h($c) ?>"></option><?php endforeach; ?></datalist></div>
+                <div class="field"><label>サービス名 <span style="color:#b42318">*</span></label><input name="service" id="af_service" required placeholder="例: OpenAI Console"></div>
+                <div class="field"><label>ログインID（メール等）</label><input name="login_id" id="af_login" placeholder="例: ops@example.com"></div>
+                <div class="field"><label>ログインURL</label><input name="url" id="af_url" type="url" placeholder="https://..."></div>
+                <div class="field full"><label><?= icon('lock', 15) ?> パスワード（暗号化保存）</label><input type="text" name="password" id="af_password" autocomplete="off" placeholder="空欄なら現状維持"><div class="hint" id="af_pw_state"></div></div>
+                <div class="field full"><label>メモ（2段階認証の連絡先など）</label><textarea name="notes" id="af_notes" rows="2"></textarea></div>
+            </div>
+        </div>
+        <div class="modal-foot">
+            <button type="button" onclick="document.getElementById('accountDialog').close()">キャンセル</button>
+            <button type="submit" class="primary">保存</button>
+        </div>
+    </form>
+</dialog>
+<script>
+    const accountDialog = document.getElementById('accountDialog');
+    const ACC_CSRF = '<?= h($csrf) ?>';
+    const pwShown = {};
+    function openAccount(a) {
+        a = a || {};
+        document.getElementById('accountModalTitle').textContent = a.id ? 'アカウントを編集' : 'アカウントを追加';
+        document.getElementById('af_id').value = a.id ?? '';
+        document.getElementById('af_category').value = a.category ?? '';
+        document.getElementById('af_service').value = a.service ?? '';
+        document.getElementById('af_login').value = a.login_id ?? '';
+        document.getElementById('af_url').value = a.url ?? '';
+        document.getElementById('af_notes').value = a.notes ?? '';
+        document.getElementById('af_password').value = '';
+        document.getElementById('af_pw_state').textContent = a.secret_hint ? ('現在: ' + a.secret_hint + '（変更時のみ入力）') : 'パスワード未設定';
+        accountDialog.showModal();
+    }
+    function fetchPw(id) {
+        const b = new URLSearchParams();
+        b.append('csrf', ACC_CSRF); b.append('action', 'reveal_account'); b.append('account_id', id);
+        return fetch('index.php', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:b }).then(r => r.json());
+    }
+    function revealPw(id) {
+        const el = document.getElementById('pw' + id);
+        if (pwShown[id]) { el.textContent = '••••••••'; pwShown[id] = false; return; }
+        fetchPw(id).then(d => { el.textContent = (d && d.password != null) ? d.password : '(取得失敗)'; pwShown[id] = true; }).catch(() => { el.textContent = '(取得失敗)'; });
+    }
+    function copyPw(id) {
+        fetchPw(id).then(d => { if (d && d.password != null) copyText(d.password); else abtToast('取得できませんでした'); }).catch(() => abtToast('取得できませんでした'));
+    }
+    function copyText(t) {
+        if (navigator.clipboard) { navigator.clipboard.writeText(t).then(() => abtToast('コピーしました')).catch(() => abtToast('コピーできませんでした')); }
+        else { const ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta); ta.select(); try{document.execCommand('copy');abtToast('コピーしました');}catch(e){} ta.remove(); }
+    }
+    function abtToast(msg){ const t=document.getElementById('abtToast'); if(!t)return; t.textContent=msg; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),1500); }
+</script>
+</body></html>
+<?php exit; endif; ?>
 <?php
 /* ================================================================== *
  *  ガイドページ（route=guide）：各キーの「必要なもの・取得場所」
