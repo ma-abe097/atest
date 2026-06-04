@@ -345,7 +345,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pprod = trim((string) ($_POST['product'] ?? ''));
         $pproj = trim((string) ($_POST['openai_project_id'] ?? ''));
         $ptype = (string) ($_POST['cost_type'] ?? '');
-        if (!in_array($ptype, ['', 'openai', 'twilio', 'dataforseo', 'vonage', 'serpapi'], true)) { $ptype = ''; }
+        if (!in_array($ptype, ['', 'openai', 'twilio', 'dataforseo', 'vonage', 'serpapi', 'gcp_bq'], true)) { $ptype = ''; }
         $pacct = trim((string) ($_POST['cost_account'] ?? ''));
         if ($pname === '') { flash('err', '箱の名前は必須です。'); redirect_self(); }
         // 管理キー（OpenAI Admin）任意
@@ -384,10 +384,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $cidIn = isset($_POST['credential_id']) && $_POST['credential_id'] !== '' ? (int) $_POST['credential_id'] : null;
         $cname = trim((string) ($_POST['name'] ?? ''));
         $ctype = (string) ($_POST['cost_type'] ?? '');
-        if (!in_array($ctype, ['', 'openai', 'twilio', 'dataforseo', 'vonage', 'serpapi'], true)) { $ctype = ''; }
+        if (!in_array($ctype, ['', 'openai', 'twilio', 'dataforseo', 'vonage', 'serpapi', 'gcp_bq'], true)) { $ctype = ''; }
         $cacct = trim((string) ($_POST['cost_account'] ?? ''));
         $cproj = trim((string) ($_POST['openai_project_id'] ?? ''));
         $csecret = (string) ($_POST['secret'] ?? '');
+        if (trim($csecret) === '' && trim((string) ($_POST['secret_json'] ?? '')) !== '') { $csecret = (string) $_POST['secret_json']; }
         if ($cname === '') { flash('err', 'キーの名前は必須です。'); redirect_self(); }
         if ($cidIn === null && $csecret === '') { flash('err', 'キーの値を入力してください。'); redirect_self(); }
         if ($csecret !== '' && !encryption_ready()) { flash('err', 'APP_ENCRYPTION_KEY が未設定のため、キーを保存できません。'); redirect_self(); }
@@ -465,6 +466,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($prod === '') { flash('err', 'プロダクトが指定されていません。'); redirect_self(); }
         $r = refresh_product_costs($gid, $prod);
         flash('ok', sprintf('「%s」のコストを更新しました（成功 %d / 失敗 %d / 対象外 %d）。', $prod, $r['ok'], $r['fail'], $r['skip']));
+        redirect_self();
+    }
+
+    if ($action === 'add_credit') {
+        require_role_at_least($gid, 'member');
+        $prod = (string) ($_POST['product'] ?? '');
+        $amt = (float) ($_POST['amount'] ?? 0);
+        $cur = trim((string) ($_POST['currency'] ?? 'JPY')) ?: 'JPY';
+        $note = trim((string) ($_POST['note'] ?? ''));
+        if ($prod === '' || $amt <= 0) { flash('err', '金額を正しく入力してください。'); }
+        else { add_credit_purchase($gid, $prod, $amt, $cur, $note); flash('ok', '追加クレジット ' . h($cur) . ' ' . number_format($amt) . ' を記録しました。'); }
+        redirect_self();
+    }
+
+    if ($action === 'delete_credit') {
+        require_role_at_least($gid, 'member');
+        delete_credit_purchase($gid, (int) ($_POST['id'] ?? 0));
+        flash('ok', '追加クレジットの記録を削除しました。');
         redirect_self();
     }
 
@@ -1249,12 +1268,14 @@ function render_modals(string $csrf, array $names, array $credentials): void
                         <option value="dataforseo">DataForSEO</option>
                         <option value="vonage">Vonage</option>
                         <option value="serpapi">SerpApi</option>
+                        <option value="gcp_bq">Google Cloud（BigQuery）</option>
                     </select>
                     <div class="hint">各種別で必要な項目・取得場所は <a href="<?= h(app_url('guide')) ?>" target="_blank">キーの取得ガイド</a> を参照。</div>
                 </div>
                 <div class="field full" id="cf_acct_wrap" style="display:none"><label id="cf_acct_label">アカウントID</label><input name="cost_account" id="cf_acct" placeholder="Twilio: Account SID（ACxxxx）"></div>
                 <div class="field full" id="cf_proj_wrap"><label>OpenAI プロジェクトID（既定・任意）</label><input name="openai_project_id" id="cf_proj" placeholder="proj_xxxxx（空＝組織全体）"><div class="hint">箱側で個別指定があればそちらが優先されます。</div></div>
-                <div class="field full"><label><?= icon('lock', 15) ?> キー / トークン（暗号化保存）</label><input type="password" name="secret" id="cf_secret" autocomplete="new-password" placeholder="OpenAI: sk-admin-... / Twilio: Auth Token"><div class="hint" id="cf_secret_state"></div></div>
+                <div class="field full" id="cf_secret_wrap"><label><?= icon('lock', 15) ?> キー / トークン（暗号化保存）</label><input type="password" name="secret" id="cf_secret" autocomplete="new-password" placeholder="OpenAI: sk-admin-... / Twilio: Auth Token"><div class="hint" id="cf_secret_state"></div></div>
+                <div class="field full" id="cf_json_wrap" style="display:none"><label><?= icon('lock', 15) ?> サービスアカウントJSON（暗号化保存）</label><textarea name="secret_json" id="cf_secret_json" rows="4" placeholder='{"type":"service_account", ... } を貼り付け'></textarea><div class="hint">BigQuery 閲覧＋ジョブ実行権限のあるサービスアカウントのJSONキー。</div></div>
             </div>
         </div>
         <div class="modal-foot">
@@ -1307,10 +1328,13 @@ function render_modals(string $csrf, array $names, array $credentials): void
     }
     function cfTypeChange() {
         const t = document.getElementById('cf_cost_type').value;
-        const acctTypes = { twilio:'Twilio Account SID', vonage:'Vonage API Key', dataforseo:'DataForSEO ログイン（メール）' };
+        const acctTypes = { twilio:'Twilio Account SID', vonage:'Vonage API Key', dataforseo:'DataForSEO ログイン（メール）', gcp_bq:'BigQuery テーブル（project.dataset.table）' };
         document.getElementById('cf_proj_wrap').style.display = (t === 'openai' || t === '') ? '' : 'none';
         document.getElementById('cf_acct_wrap').style.display = acctTypes[t] ? '' : 'none';
         if (acctTypes[t]) { document.getElementById('cf_acct_label').textContent = acctTypes[t]; }
+        const gcp = (t === 'gcp_bq');
+        document.getElementById('cf_secret_wrap').style.display = gcp ? 'none' : '';
+        document.getElementById('cf_json_wrap').style.display = gcp ? '' : 'none';
         const ph = { openai:'sk-admin-...', twilio:'Twilio Auth Token', vonage:'Vonage API Secret', dataforseo:'DataForSEO APIパスワード', serpapi:'SerpApi API Key' };
         document.getElementById('cf_secret').placeholder = ph[t] || 'キー / トークン';
     }
@@ -1323,6 +1347,7 @@ function render_modals(string $csrf, array $names, array $credentials): void
         document.getElementById('cf_acct').value = c.cost_account ?? '';
         document.getElementById('cf_proj').value = c.openai_project_id ?? '';
         document.getElementById('cf_secret').value = '';
+        document.getElementById('cf_secret_json').value = '';
         document.getElementById('cf_secret_state').textContent = c.secret_hint ? ('現在: ' + c.secret_hint + '（変更時のみ入力）') : 'キー未保存';
         cfTypeChange();
         credDialog.showModal();
@@ -1757,6 +1782,45 @@ if ($route === 'product'):
             <span class="hint">配下の箱が個別キー未設定のとき、このキーでコスト取得します。<a href="<?= h(app_url('manage')) ?>#credpanel">キーを管理</a></span>
         </form>
         <p class="hint" style="margin:10px 0 0">アイコン（見た目）の変更は、上部の<strong>アイコンをクリック</strong>してください。</p>
+    </div>
+    <?php endif; ?>
+
+    <?php if ($pname !== '（プロダクト未指定）'):
+        $creditMonth = product_credit_this_month($gid, $pname);
+        $creditList = list_credit_purchases($gid, $pname);
+    ?>
+    <!-- 追加クレジット（買い足し）の記録 -->
+    <div class="panel" style="margin-bottom:18px">
+        <h3><?= icon('plus', 16) ?> 追加クレジット（買い足し）
+            <?php if ($creditMonth): ?><span class="muted" style="font-weight:400;font-size:13px">／ 今月 <?php $cf = true; foreach ($creditMonth as $cur => $amt): echo ($cf ? '' : '・') . h($cur) . ' ' . number_format($amt, (fmod($amt,1.0)===0.0)?0:2); $cf = false; endforeach; ?></span><?php endif; ?>
+        </h3>
+        <p class="hint" style="margin:0 0 8px">月額とは別に、クレジットが切れて買い足した分などをここに記録できます（推移とは別管理の履歴）。</p>
+        <?php if ($editable): ?>
+        <form method="post" class="toolbar" style="margin:0 0 10px;box-shadow:none;border:none;padding:0;background:none;align-items:flex-end">
+            <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+            <input type="hidden" name="action" value="add_credit">
+            <input type="hidden" name="product" value="<?= h($pname) ?>">
+            <label style="font-size:12px;color:var(--muted)">金額<br><input type="number" name="amount" min="0" step="0.01" required style="width:120px" placeholder="例: 5000"></label>
+            <label style="font-size:12px;color:var(--muted)">通貨<br><select name="currency"><?php foreach (['JPY','USD','EUR','GBP'] as $cu): ?><option value="<?= $cu ?>"><?= $cu ?></option><?php endforeach; ?></select></label>
+            <label style="font-size:12px;color:var(--muted);flex:1;min-width:160px">メモ（任意）<br><input type="text" name="note" style="width:100%" placeholder="例: クレジット$50追加"></label>
+            <button class="primary" type="submit">記録</button>
+        </form>
+        <?php endif; ?>
+        <?php if ($creditList): ?>
+        <table>
+            <thead><tr><th>日時</th><th>金額</th><th>メモ</th><?php if ($editable): ?><th></th><?php endif; ?></tr></thead>
+            <tbody>
+            <?php foreach ($creditList as $cp): ?>
+                <tr>
+                    <td class="muted"><?= h(substr((string) $cp['created_at'], 0, 10)) ?></td>
+                    <td class="cost"><?= h($cp['currency']) ?> <?= number_format((float) $cp['amount'], (fmod((float)$cp['amount'],1.0)===0.0)?0:2) ?><?= jpy_hint((float) $cp['amount'], $cp['currency']) ?></td>
+                    <td><?= h($cp['note']) ?: '<span class="muted">—</span>' ?></td>
+                    <?php if ($editable): ?><td style="white-space:nowrap"><form method="post" style="display:inline" onsubmit="return confirm('この記録を削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_credit"><input type="hidden" name="id" value="<?= (int) $cp['id'] ?>"><button class="link danger" type="submit"><?= icon('trash', 15) ?></button></form></td><?php endif; ?>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+        <?php else: ?><p class="hint">まだ記録がありません。</p><?php endif; ?>
     </div>
     <?php endif; ?>
 

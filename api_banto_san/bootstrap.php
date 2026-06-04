@@ -830,6 +830,20 @@ function db(): PDO
         )
     SQL);
 
+    // 追加クレジット購入の記録（プロダクト単位の一時的な買い足し）
+    $pdo->exec(<<<SQL
+        CREATE TABLE IF NOT EXISTS credit_purchases (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_id   INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+            product    TEXT    NOT NULL DEFAULT '',
+            ym         TEXT    NOT NULL,
+            amount     REAL    NOT NULL DEFAULT 0,
+            currency   TEXT    NOT NULL DEFAULT 'JPY',
+            note       TEXT    NOT NULL DEFAULT '',
+            created_at TEXT    NOT NULL
+        )
+    SQL);
+
     $cols = $pdo->query('PRAGMA table_info(apis)')->fetchAll();
     $hasGroup = false;
     foreach ($cols as $c) {
@@ -1087,6 +1101,37 @@ function set_product_alert(int $gid, string $product, ?float $amount): void
     )->execute([':g' => $gid, ':n' => $product, ':a' => $amount]);
 }
 
+/** 追加クレジット購入を記録 */
+function add_credit_purchase(int $gid, string $product, float $amount, string $cur, string $note): int
+{
+    db()->prepare('INSERT INTO credit_purchases (group_id, product, ym, amount, currency, note, created_at) VALUES (:g,:p,:ym,:a,:c,:n,:t)')
+        ->execute([':g' => $gid, ':p' => $product, ':ym' => month_key(), ':a' => $amount, ':c' => $cur ?: 'JPY', ':n' => $note, ':t' => now()]);
+    return (int) db()->lastInsertId();
+}
+
+/** プロダクトのクレジット購入履歴（新しい順） */
+function list_credit_purchases(int $gid, string $product): array
+{
+    $st = db()->prepare('SELECT * FROM credit_purchases WHERE group_id = :g AND product = :p ORDER BY created_at DESC');
+    $st->execute([':g' => $gid, ':p' => $product]);
+    return $st->fetchAll();
+}
+
+function delete_credit_purchase(int $gid, int $id): void
+{
+    db()->prepare('DELETE FROM credit_purchases WHERE id = :id AND group_id = :g')->execute([':id' => $id, ':g' => $gid]);
+}
+
+/** プロダクト×当月の追加クレジット合計（通貨別） [cur=>amount] */
+function product_credit_this_month(int $gid, string $product): array
+{
+    $st = db()->prepare('SELECT currency, SUM(amount) amt FROM credit_purchases WHERE group_id = :g AND product = :p AND ym = :ym GROUP BY currency');
+    $st->execute([':g' => $gid, ':p' => $product, ':ym' => month_key()]);
+    $out = [];
+    foreach ($st->fetchAll() as $r) { $out[(string) $r['currency']] = (float) $r['amt']; }
+    return $out;
+}
+
 /** $_FILES['logo_file'] を uploads/logos に保存して公開URLを返す。無ければ null。 */
 function save_uploaded_logo(int $gid, string $product): ?string
 {
@@ -1182,9 +1227,9 @@ function default_guides(): array
             'needs'  => '自動取得は非対応。月額は手入力してください。',
             'source' => 'TomTom Developer Dashboard の利用状況を参照。',
             'url'    => 'https://developer.tomtom.com/'],
-        'google' => ['title' => 'Google Cloud（手入力）',
-            'needs'  => '即時取得APIが無いため当面は手入力（正式には課金データのBigQueryエクスポートが必要）。',
-            'source' => 'Google Cloud Console → お支払い（Billing）。',
+        'google' => ['title' => 'Google Cloud（BigQuery・自動取得◯）',
+            'needs'  => '種別=Google Cloud（BigQuery）/ アカウントID欄=BigQueryテーブル（project.dataset.gcp_billing_export_v1_XXXX）/ キー欄=サービスアカウントJSON。Maps・Vertex・Gemini等の有料Googleも全部ここに集約されます。',
+            'source' => '①Cloud Billing →「BigQueryエクスポート」を有効化（データ蓄積に半日〜1日）②サービスアカウント作成し「BigQuery データ閲覧者」＋「BigQuery ジョブユーザー」を付与③JSONキーを発行。テーブル名はBigQueryのエクスポート先データセットで確認。',
             'url'    => 'https://console.cloud.google.com/billing'],
         'azure' => ['title' => 'Azure（将来対応）',
             'needs'  => '自動取得は将来対応予定（Cost Management API）。当面は手入力。',
@@ -1414,6 +1459,11 @@ function fetch_project_cost(int $gid, array $project): array
             if ($secret === null) { throw new RuntimeException('SerpApiは API Key（キー欄）が必要です。'); }
             $c = cost_serpapi($secret);
             break;
+        case 'gcp_bq':
+            if ($secret === null) { throw new RuntimeException('Google Cloud は サービスアカウントJSON（キー欄）が必要です。'); }
+            if ($account === '') { throw new RuntimeException('Google Cloud は BigQueryテーブル（アカウントID欄）が必要です。'); }
+            $c = cost_gcp_bq($secret, $account);
+            break;
         default:
             throw new RuntimeException('この箱のコスト種別が未設定です。編集でコスト種別（OpenAI / Twilio 等）を選んでください。');
     }
@@ -1518,6 +1568,67 @@ function cost_serpapi(string $apiKey): array
     $note  = 'SerpApi: 当月 ' . ($used !== null ? (int) $used : '?') . ' 検索' . ($left !== null ? ' / 残 ' . (int) $left : '');
     return ['amount' => round($price, 2), 'currency' => 'USD', 'note' => $note];
 }
+
+/** サービスアカウントJSONから Google アクセストークンを取得（JWT Bearer） */
+function gcp_access_token(string $saJson): string
+{
+    $sa = json_decode($saJson, true);
+    if (!is_array($sa) || empty($sa['client_email']) || empty($sa['private_key'])) {
+        throw new RuntimeException('サービスアカウントJSONが不正です（client_email / private_key が必要）。');
+    }
+    $tokenUri = $sa['token_uri'] ?? 'https://oauth2.googleapis.com/token';
+    $b64 = static fn($d) => rtrim(strtr(base64_encode($d), '+/', '-_'), '=');
+    $now = time();
+    $head = $b64(json_encode(['alg' => 'RS256', 'typ' => 'JWT']));
+    $claim = $b64(json_encode([
+        'iss' => $sa['client_email'], 'scope' => 'https://www.googleapis.com/auth/bigquery',
+        'aud' => $tokenUri, 'iat' => $now, 'exp' => $now + 3600,
+    ]));
+    $input = $head . '.' . $claim;
+    $sig = '';
+    if (!openssl_sign($input, $sig, $sa['private_key'], OPENSSL_ALGO_SHA256)) {
+        throw new RuntimeException('JWT署名に失敗しました（private_key をご確認ください）。');
+    }
+    $jwt = $input . '.' . $b64($sig);
+    $r = http_request('POST', $tokenUri, [
+        'headers' => ['Content-Type: application/x-www-form-urlencoded'],
+        'body' => http_build_query(['grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer', 'assertion' => $jwt]),
+    ]);
+    if ($r['status'] !== 200) { throw new RuntimeException('Googleトークン取得に失敗 (HTTP ' . $r['status'] . ')。' . substr((string) $r['body'], 0, 200)); }
+    $d = json_decode($r['body'], true);
+    if (empty($d['access_token'])) { throw new RuntimeException('アクセストークンを取得できませんでした。'); }
+    return (string) $d['access_token'];
+}
+
+/** Google Cloud 当月コスト（BigQuery 課金エクスポートを集計）。$table は project.dataset.table */
+function cost_gcp_bq(string $saJson, string $table): array
+{
+    $sa = json_decode($saJson, true);
+    $project = is_array($sa) ? ($sa['project_id'] ?? '') : '';
+    if ($project === '') { throw new RuntimeException('サービスアカウントJSONに project_id がありません。'); }
+    if (!preg_match('/^[A-Za-z0-9._\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_*\-]+$/', $table)) {
+        throw new RuntimeException('BigQueryテーブルは「project.dataset.table」形式で指定してください。');
+    }
+    $token = gcp_access_token($saJson);
+    $monthStart = gmdate('Y-m-01');
+    $sql = "SELECT currency AS cur, SUM(cost) + SUM(IFNULL((SELECT SUM(c.amount) FROM UNNEST(credits) c), 0)) AS net "
+         . "FROM `{$table}` WHERE usage_start_time >= TIMESTAMP('{$monthStart} 00:00:00 UTC') "
+         . "GROUP BY currency ORDER BY net DESC";
+    $url = 'https://bigquery.googleapis.com/bigquery/v2/projects/' . rawurlencode($project) . '/queries';
+    $r = http_request('POST', $url, [
+        'headers' => ['Authorization: Bearer ' . $token, 'Content-Type: application/json'],
+        'body' => json_encode(['query' => $sql, 'useLegacySql' => false, 'timeoutMs' => 30000]),
+    ]);
+    if ($r['status'] !== 200) { throw new RuntimeException('BigQueryエラー (HTTP ' . $r['status'] . ')。' . substr((string) $r['body'], 0, 300)); }
+    $d = json_decode($r['body'], true);
+    if (!($d['jobComplete'] ?? false)) { throw new RuntimeException('BigQueryジョブが時間内に完了しませんでした。'); }
+    $rows = $d['rows'] ?? [];
+    if (!$rows) { return ['amount' => 0.0, 'currency' => 'JPY', 'note' => 'GCP: 当月データなし']; }
+    $cur = strtoupper((string) ($rows[0]['f'][0]['v'] ?? 'JPY')) ?: 'JPY';
+    $net = (float) ($rows[0]['f'][1]['v'] ?? 0);
+    return ['amount' => round(max(0.0, $net), 2), 'currency' => $cur, 'note' => 'GCP: BigQuery集計'];
+}
+
 
 /* ------------------------------------------------------------------ *
  *  コスト自動取得コネクタ（プラグイン式）。今は OpenAI に対応。
