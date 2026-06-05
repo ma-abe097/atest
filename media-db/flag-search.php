@@ -33,10 +33,40 @@ require __DIR__ . '/layout_top.php';
         </div>
 
         <div v-else class="space-y-6">
-            <!-- ドメイン重複ランキング（このサイトで集計：準備中） -->
-            <div class="border border-purple-200 rounded-xl bg-purple-50 p-6 text-center">
-                <p class="text-gray-700 font-medium mb-1">「{{ selectedMediaName }}」の<b>ドメイン重複ランキング</b>（準備中）</p>
-                <p class="text-xs text-gray-500">このリスト元の顧客を「他媒体検索」した結果がたまると、よく併用されている媒体ドメインを多い順で表示します。（検索API接続後に有効になります）</p>
+            <!-- ドメイン重複ランキング -->
+            <div class="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm">
+                <div class="bg-white px-6 py-5 border-b border-gray-200 flex items-center justify-between gap-2">
+                    <div>
+                        <h3 class="font-bold text-gray-800 text-xl">他に利用している媒体ランキング</h3>
+                        <p class="text-sm text-gray-500">「{{ selectedMediaName }}」から受注した顧客が、他に利用している媒体ドメイン</p>
+                    </div>
+                    <button @click="searchAllPending"
+                            class="text-xs font-medium text-blue-600 border border-blue-200 rounded px-2 py-1 hover:bg-blue-50 shrink-0">
+                        未取得をまとめて検索
+                    </button>
+                </div>
+                <div v-if="flaggedRanking.length === 0" class="text-center p-8 text-gray-400">
+                    まだ集計データがありません。<br>
+                    <span class="text-xs">下の各顧客で「他媒体を調べる」を実行すると、ここに集計されます。</span>
+                </div>
+                <table v-else class="w-full text-sm text-left">
+                    <thead class="text-xs text-gray-700 bg-gray-50 border-b border-gray-200">
+                        <tr>
+                            <th class="px-6 py-3 text-center w-24 font-bold">No.</th>
+                            <th class="px-6 py-3 font-bold">ドメイン</th>
+                            <th class="px-6 py-3 text-center w-32 font-bold">重複件数</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="(item, index) in flaggedRanking" :key="item.domain" class="bg-white border-b hover:bg-blue-50 transition-colors">
+                            <td class="px-6 py-3 text-center text-gray-500">{{ index + 1 }}</td>
+                            <td class="px-6 py-3">
+                                <a :href="'https://' + item.domain" target="_blank" rel="noopener" class="text-blue-600 hover:underline">{{ item.domain }}</a>
+                            </td>
+                            <td class="px-6 py-3 text-center font-bold text-gray-700">{{ item.count }}</td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
 
             <!-- 該当顧客リスト -->
@@ -54,10 +84,19 @@ require __DIR__ . '/layout_top.php';
                             <div class="flex flex-wrap items-center gap-2">
                                 <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">{{ client.industry }}</span>
                                 <span v-if="client.address" class="text-xs bg-gray-50 text-gray-500 px-2 py-0.5 rounded border">{{ client.address }}</span>
-                                <button @click="searchOtherMedia(client)"
-                                   class="inline-flex items-center gap-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded px-2 py-1 ml-auto">
-                                    <i data-lucide="search" class="w-3 h-3"></i> 他媒体を調べる
+                                <button @click="searchOtherMedia(client)" :disabled="searchingId === client.id"
+                                   class="inline-flex items-center gap-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded px-2 py-1 ml-auto disabled:opacity-50">
+                                    <i :data-lucide="searchingId === client.id ? 'loader' : 'search'" :class="['w-3 h-3', searchingId === client.id ? 'sync-spin' : '']"></i>
+                                    {{ searchingId === client.id ? '検索中…' : '他媒体を調べる' }}
                                 </button>
+                            </div>
+                            <div v-if="client.foundMedia && client.foundMedia.length" class="mt-2 pl-1">
+                                <p class="text-xs font-medium text-gray-500 mb-1">他媒体（{{ client.foundMedia.length }}件）:</p>
+                                <ul class="flex flex-wrap gap-1">
+                                    <li v-for="(m, i) in client.foundMedia" :key="i">
+                                        <a :href="m.url" target="_blank" rel="noopener" class="inline-block text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded px-2 py-0.5 hover:bg-blue-100">{{ m.domain }}</a>
+                                    </li>
+                                </ul>
                             </div>
                         </li>
                     </ul>

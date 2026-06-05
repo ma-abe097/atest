@@ -47,6 +47,33 @@ function today_str(): string
 }
 
 /* ------------------------------------------------------------------ *
+ *  設定（config.local.php / 環境変数）。APIキー等の秘密情報はここから読む。
+ *  config.local.php は gitignore 済み・直アクセス禁止(.htaccess)。
+ * ------------------------------------------------------------------ */
+function mdb_config(string $key, $default = null)
+{
+    static $conf = null;
+    if ($conf === null) {
+        $conf = [];
+        $file = __DIR__ . '/config.local.php';
+        if (is_file($file)) {
+            $loaded = require $file;
+            if (is_array($loaded)) {
+                $conf = $loaded;
+            }
+        }
+    }
+    $env = getenv($key);
+    if ($env !== false && $env !== '') {
+        return $env;
+    }
+    if (array_key_exists($key, $conf) && $conf[$key] !== '' && $conf[$key] !== null) {
+        return $conf[$key];
+    }
+    return $default;
+}
+
+/* ------------------------------------------------------------------ *
  *  CSRF（フォーム / API共通）
  * ------------------------------------------------------------------ */
 function csrf_token(): string

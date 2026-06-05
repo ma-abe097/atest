@@ -114,11 +114,46 @@
         if (window.lucide) window.lucide.createIcons();
     }
 
+    // ===== 他媒体検索（search.php を呼ぶ） =====
+    // 1顧客を「会社名＋住所」で検索し、見つかったURL/ドメインを保存して返す
+    async function searchClientMedia(client) {
+        const res = await fetch('search.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF },
+            body: JSON.stringify({ id: client.id }),
+        });
+        let data = {};
+        try { data = await res.json(); } catch (e) { /* noop */ }
+        if (!res.ok || data.error) {
+            throw new Error(data.message || data.error || ('HTTP ' + res.status));
+        }
+        // ストアの該当顧客へ反映（自動保存もかかる）
+        const c = store.clients.find(x => x.id === client.id);
+        if (c) {
+            c.foundMedia = data.foundMedia || [];
+            c.searchedAt = data.searchedAt || '';
+        }
+        return data;
+    }
+
+    /** 対象顧客群の foundMedia から「ドメイン × 何社で重複したか」のランキングを作る */
+    function foundDomainsRanking(clients) {
+        const counts = {};
+        clients.forEach(c => {
+            const domains = new Set((c.foundMedia || []).map(m => m.domain).filter(Boolean));
+            domains.forEach(d => { counts[d] = (counts[d] || 0) + 1; });
+        });
+        return Object.entries(counts)
+            .map(([domain, count]) => ({ domain, count }))
+            .sort((a, b) => b.count - a.count || a.domain.localeCompare(b.domain));
+    }
+
     // 保存状態インジケーター（v-ifで出る loader アイコン）の再描画
     watch(() => [store.isSyncing, store.syncError], () => nextTick(refreshIcons));
 
     // ===== 公開 =====
-    window.AppCore = { store, save, getMediaDetails, calculateRanking, exportClientsCSV, refreshIcons };
+    window.AppCore = { store, save, getMediaDetails, calculateRanking, exportClientsCSV, refreshIcons, searchClientMedia, foundDomainsRanking };
 })();
+
 
 

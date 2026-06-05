@@ -64,31 +64,68 @@ require __DIR__ . '/layout_top.php';
                             <span v-else class="text-xs text-gray-400 italic">未設定</span>
                         </div>
 
-                        <div class="mt-3 pt-3 border-t border-gray-200 flex flex-wrap items-center gap-2">
-                            <button @click="searchOtherMedia(client)"
-                                    class="inline-flex items-center gap-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md px-3 py-1.5 shadow-sm">
-                                <i data-lucide="search" class="w-4 h-4"></i> 他媒体を調べる
-                            </button>
-                            <span class="text-[11px] text-gray-400">（このサイトで検索：検索API接続後に有効）</span>
+                        <div class="mt-3 pt-3 border-t border-gray-200">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <button @click="searchOtherMedia(client)" :disabled="searchingId === client.id"
+                                        class="inline-flex items-center gap-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md px-3 py-1.5 shadow-sm disabled:opacity-50">
+                                    <i :data-lucide="searchingId === client.id ? 'loader' : 'search'" :class="['w-4 h-4', searchingId === client.id ? 'sync-spin' : '']"></i>
+                                    {{ searchingId === client.id ? '検索中…' : '他媒体を調べる' }}
+                                </button>
+                                <span v-if="client.searchedAt" class="text-[11px] text-gray-400">最終検索: {{ client.searchedAt }}</span>
+                            </div>
+                            <div v-if="client.foundMedia && client.foundMedia.length" class="mt-2">
+                                <p class="text-xs font-medium text-gray-500 mb-1">他に利用している媒体（{{ client.foundMedia.length }}件）:</p>
+                                <ul class="flex flex-col gap-1 max-h-40 overflow-y-auto">
+                                    <li v-for="(m, i) in client.foundMedia" :key="i" class="text-xs flex items-center gap-1.5">
+                                        <span class="text-gray-400 shrink-0">{{ i + 1 }}.</span>
+                                        <a :href="m.url" target="_blank" rel="noopener" class="text-blue-600 hover:underline truncate">{{ m.title || m.url }}</a>
+                                        <span class="text-gray-400 shrink-0">（{{ m.domain }}）</span>
+                                    </li>
+                                </ul>
+                            </div>
+                            <p v-else-if="client.searchedAt" class="text-xs text-gray-400 mt-1">他媒体は見つかりませんでした。</p>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- 併用媒体（ドメイン）ランキング（このサイトで集計：準備中） -->
+        <!-- 併用媒体（ドメイン）重複ランキング -->
         <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col h-[600px]">
-            <div class="flex justify-between items-center mb-4 border-b pb-2">
+            <div class="flex justify-between items-center mb-4 border-b pb-2 gap-2">
                 <h3 class="text-lg font-bold flex items-center text-gray-800">
                     <i data-lucide="bar-chart-3" class="w-5 h-5 mr-2 text-purple-600"></i>
                     併用媒体ランキング
                 </h3>
+                <button @click="searchAllPending"
+                        class="text-xs font-medium text-blue-600 border border-blue-200 rounded px-2 py-1 hover:bg-blue-50 shrink-0">
+                    未取得をまとめて検索
+                </button>
             </div>
 
-            <div class="flex-1 overflow-y-auto pr-2 flex flex-col items-center justify-center text-center p-6">
-                <i data-lucide="bar-chart-3" class="w-12 h-12 text-purple-200 mb-3"></i>
-                <p class="text-gray-700 mb-1 font-medium">ドメイン重複ランキング（準備中）</p>
-                <p class="text-xs text-gray-400">各受注客を「他媒体検索」した結果がたまると、ここに<br>よく併用されている媒体ドメインを多い順で表示します。<br>（検索API接続後に有効になります）</p>
+            <div class="flex-1 overflow-y-auto pr-2">
+                <div v-if="foundRanking.length === 0" class="text-center p-8 text-gray-400">
+                    まだ集計データがありません。<br>
+                    <span class="text-xs">各受注客の「他媒体を調べる」を実行すると、ここに<br>ドメインの重複ランキング（何社が同じ媒体を使っているか）が出ます。</span>
+                </div>
+                <table v-else class="w-full text-sm text-left">
+                    <thead class="text-xs text-gray-700 bg-gray-50 border-b border-gray-200 sticky top-0">
+                        <tr>
+                            <th class="px-3 py-2 text-center w-12 font-bold">No.</th>
+                            <th class="px-3 py-2 font-bold">ドメイン</th>
+                            <th class="px-3 py-2 text-center w-20 font-bold">重複</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="(item, index) in foundRanking" :key="item.domain" class="bg-white border-b hover:bg-blue-50 transition-colors">
+                            <td class="px-3 py-2 text-center text-gray-500">{{ index + 1 }}</td>
+                            <td class="px-3 py-2">
+                                <a :href="'https://' + item.domain" target="_blank" rel="noopener" class="text-blue-600 hover:underline">{{ item.domain }}</a>
+                            </td>
+                            <td class="px-3 py-2 text-center font-bold text-gray-700">{{ item.count }}</td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>

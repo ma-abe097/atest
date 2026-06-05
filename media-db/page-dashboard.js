@@ -5,7 +5,7 @@
  */
 (function () {
     const { createApp, ref, computed, onMounted, watch, nextTick } = Vue;
-    const { store, exportClientsCSV, refreshIcons } = AppCore;
+    const { store, exportClientsCSV, refreshIcons, searchClientMedia, foundDomainsRanking } = AppCore;
 
     createApp({
         setup() {
@@ -50,10 +50,41 @@
             // 受注リスト元（獲得元の媒体）
             const sourceMedia = (client) => store.media.find(m => m.id === client.sourceMediaId) || null;
 
-            // 他媒体検索（このサイト自身で検索する仕組みは検索API接続後に有効化）
-            const searchOtherMedia = (client) => {
-                alert('他媒体の検索機能は準備中です（検索API接続後に有効になります）。');
+            // ===== 他媒体検索（このサイト自身が検索） =====
+            const searchingId = ref('');     // 検索中の顧客ID（ボタンのぐるぐる用）
+            const searchError = ref('');
+
+            const searchOtherMedia = async (client) => {
+                if (searchingId.value) return;   // 同時実行を防ぐ
+                searchingId.value = client.id;
+                searchError.value = '';
+                try {
+                    await searchClientMedia(client);
+                } catch (e) {
+                    searchError.value = (e && e.message) ? e.message : String(e);
+                    alert('検索に失敗しました：\n' + searchError.value);
+                } finally {
+                    searchingId.value = '';
+                    nextTick(refreshIcons);
+                }
             };
+
+            // 未取得の顧客をまとめて検索（1件ずつ順番に）
+            const searchAllPending = async () => {
+                const targets = filteredClientsByDate.value.filter(c => !c.searchedAt);
+                if (targets.length === 0) { alert('未取得の顧客はありません。'); return; }
+                if (!confirm(`未取得の ${targets.length} 件を順番に検索します。\n（検索APIの利用料がかかります）よろしいですか？`)) return;
+                for (const c of targets) {
+                    searchingId.value = c.id;
+                    try { await searchClientMedia(c); }
+                    catch (e) { console.error(e); }
+                }
+                searchingId.value = '';
+                nextTick(refreshIcons);
+            };
+
+            // 期間内の顧客の foundMedia から「ドメイン × 何社」ランキング
+            const foundRanking = computed(() => foundDomainsRanking(filteredClientsByDate.value));
 
             const exportCsv = () => {
                 const label = (dateRangeText.value || '全期間').replace(/ /g, '');
@@ -68,7 +99,8 @@
                 store,
                 filterStartDate, filterEndDate, resetDateFilter,
                 filteredClientsByDate, dateRangeText,
-                deleteClient, exportCsv, sourceMedia, searchOtherMedia,
+                deleteClient, exportCsv, sourceMedia,
+                searchOtherMedia, searchAllPending, searchingId, foundRanking,
             };
         }
     }).mount('#app');

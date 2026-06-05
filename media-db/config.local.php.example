@@ -1,0 +1,23 @@
+<?php
+/**
+ * 設定ファイルの雛形。
+ * --------------------------------------------------------------------------
+ * このファイルを同じフォルダに「config.local.php」という名前でコピーし、
+ * 値を入れてください。（config.local.php は Git に含めず・直アクセスも禁止）
+ *
+ * OpenAI APIキーの取り方:
+ *   1) https://platform.openai.com/ にサインイン
+ *   2) 左メニュー「API keys」→「Create new secret key」→ sk-... をコピー
+ *   3) 「Billing」で支払い方法と使用上限を設定
+ *   4) 下の SEARCH_API_KEY に貼り付けて保存（このファイルをサーバーに置くだけ）
+ */
+return [
+    // 検索プロバイダ（今は 'openai'）
+    'SEARCH_PROVIDER' => 'openai',
+
+    // OpenAI のシークレットキー（sk-... ）
+    'SEARCH_API_KEY' => '',
+
+    // 使用モデル（web search対応モデル）。必要なら変更可。
+    'SEARCH_MODEL' => 'gpt-4o-mini',
+];
