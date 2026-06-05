@@ -27,14 +27,15 @@ if ($adminKey === '') {
 }
 
 $rate      = (float) mdb_config('USD_JPY_RATE', 155);
+$projectId = trim((string) mdb_config('OPENAI_PROJECT_ID', ''));   // 指定でそのプロジェクト分のみ
 $month     = gmdate('Y-m');
 $cacheFile = __DIR__ . '/cost_cache.json';
 $now       = time();
 
-// キャッシュ（同月・30分以内）。レートは都度反映。
+// キャッシュ（同月・同プロジェクト・30分以内）。レートは都度反映。
 if (is_file($cacheFile)) {
     $c = json_decode((string) file_get_contents($cacheFile), true);
-    if (is_array($c) && ($c['month'] ?? '') === $month && ($now - (int) ($c['fetchedAt'] ?? 0)) < 1800) {
+    if (is_array($c) && ($c['month'] ?? '') === $month && ($c['project'] ?? '') === $projectId && ($now - (int) ($c['fetchedAt'] ?? 0)) < 1800) {
         $c['rate'] = $rate;
         $c['jpy']  = (int) round(((float) ($c['usd'] ?? 0)) * $rate);
         echo json_encode($c, JSON_UNESCAPED_UNICODE);
@@ -42,10 +43,13 @@ if (is_file($cacheFile)) {
     }
 }
 
-// 当月1日(UTC)から取得
+// 当月1日(UTC)から取得。プロジェクト指定があればそのプロジェクトのみに絞る。
 $start = strtotime(gmdate('Y-m-01 00:00:00') . ' UTC');
 $url   = 'https://api.openai.com/v1/organization/costs?start_time=' . $start . '&bucket_width=1d&limit=62';
-$r     = mdb_http('GET', $url, ['Authorization: Bearer ' . $adminKey]);
+if ($projectId !== '') {
+    $url .= '&project_ids=' . rawurlencode($projectId) . '&group_by=project_id';
+}
+$r = mdb_http('GET', $url, ['Authorization: Bearer ' . $adminKey]);
 
 if ($r['status'] === 401 || $r['status'] === 403) {
     echo json_encode(['enabled' => true, 'error' => '金額の取得には管理者キー(sk-admin-)が必要です。通常のAPIキーでは取得できません。'], JSON_UNESCAPED_UNICODE);
@@ -60,13 +64,19 @@ $d   = json_decode($r['body'], true);
 $usd = 0.0;
 foreach (($d['data'] ?? []) as $bucket) {
     foreach (($bucket['results'] ?? []) as $res) {
+        // プロジェクト指定時は、そのプロジェクトの結果だけ合計する
+        if ($projectId !== '' && ($res['project_id'] ?? null) !== $projectId) {
+            continue;
+        }
         $usd += (float) ($res['amount']['value'] ?? 0);
     }
 }
 
 $out = [
     'enabled'   => true,
+    'scope'     => $projectId !== '' ? 'project' : 'org',
     'month'     => $month,
+    'project'   => $projectId,
     'usd'       => round($usd, 2),
     'jpy'       => (int) round($usd * $rate),
     'rate'      => $rate,

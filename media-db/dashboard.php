@@ -17,7 +17,7 @@ require __DIR__ . '/layout_top.php';
     <div v-if="monthlyCost && monthlyCost.enabled" class="flex justify-end">
         <span class="inline-flex items-center gap-1.5 text-xs bg-white border border-gray-200 rounded-full px-3 py-1.5 shadow-sm">
             <i data-lucide="circle-dollar-sign" class="w-4 h-4 text-green-600"></i>
-            <span class="text-gray-500">OpenAI 当月使用分:</span>
+            <span class="text-gray-500">OpenAI 当月使用分<span v-if="monthlyCost.scope">（{{ monthlyCost.scope === 'project' ? 'このサイト分' : '組織全体' }}）</span>:</span>
             <template v-if="monthlyCost.error"><span class="text-gray-400">{{ monthlyCost.error }}</span></template>
             <template v-else>
                 <span class="font-bold text-gray-800">¥{{ Number(monthlyCost.jpy).toLocaleString() }}</span>
