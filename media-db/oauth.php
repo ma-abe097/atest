@@ -4,8 +4,8 @@ declare(strict_types=1);
 /**
  * Googleログインの入口とコールバック
  * --------------------------------------------------------------------------
- *  oauth.php                … Googleの認可画面へリダイレクト（ログイン開始）
- *  oauth.php?action=callback … Googleからの戻り先（コード受取→ログイン確立）
+ *  oauth.php                       … Googleの認可画面へリダイレクト（ログイン開始）
+ *  oauth.php?code=...&state=...     … Googleからの戻り先（コード受取→ログイン確立）
  *
  * 有効化には config.local.php に GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET が必要。
  * ログイン可能ドメインは ALLOWED_EMAIL_DOMAINS（例: sk-t.com）で限定。
@@ -19,9 +19,11 @@ if (!google_enabled()) {
     redirect('index.php');
 }
 
-$action = $_GET['action'] ?? 'start';
+// Googleからの戻り（code か error が付いている）はコールバックとして処理する。
+// ※ここを取りこぼすと、戻りを「開始」と誤認してGoogleへ送り返し、ログイン画面をループする。
+$isCallback = isset($_GET['code']) || isset($_GET['error']) || (($_GET['action'] ?? '') === 'callback');
 
-if ($action === 'callback') {
+if ($isCallback) {
     try {
         $info = google_handle_callback();
         if (!mdb_email_allowed($info['email'])) {
