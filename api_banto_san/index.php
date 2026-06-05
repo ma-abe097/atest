@@ -2040,6 +2040,14 @@ if ($route === 'product'):
             <?php endforeach; else: ?>
                 <div class="hero-amount muted">未設定</div>
             <?php endif; ?>
+            <?php
+            // 残高（Twilio/DataForSEO 等）：このプロダクト配下の箱の残高を通貨ごとに合算
+            $pbalByCur = [];
+            foreach ($pboxes as $b) { if (($b['balance'] ?? null) !== null) { $bc = $b['currency'] ?: 'USD'; $pbalByCur[$bc] = ($pbalByCur[$bc] ?? 0) + (float) $b['balance']; } }
+            ?>
+            <?php if ($pbalByCur): ?>
+                <div class="hero-balance"><span class="lbl">残高</span><?php $bi = 0; foreach ($pbalByCur as $bc => $bsum): ?><?php if ($bi++): ?><span class="sep">/</span><?php endif; ?><span class="cur"><?= h($bc) ?></span><?= number_format($bsum, 2) ?><?= jpy_hint((float) $bsum, $bc) ?><?php endforeach; ?></div>
+            <?php endif; ?>
             <div class="hero-stats">
                 <div><span class="n"><?= count($pboxes) ?></span><span class="l">プロジェクト箱</span></div>
                 <div><span class="n"><?= count($siteCount) ?></span><span class="l">サイト</span></div>
@@ -2393,6 +2401,14 @@ if ($route === 'product'):
                 <?php endforeach; ?>
             <?php else: ?>
                 <div class="hero-amount muted">—</div>
+            <?php endif; ?>
+            <?php
+            // 残高合計（Twilio/DataForSEO 等）：全箱の残高を通貨ごとに合算
+            $balByCur = [];
+            foreach ($projects as $b) { if (($b['balance'] ?? null) !== null) { $bc = $b['currency'] ?: 'USD'; $balByCur[$bc] = ($balByCur[$bc] ?? 0) + (float) $b['balance']; } }
+            ?>
+            <?php if ($balByCur): ?>
+                <div class="hero-balance"><span class="lbl">残高合計</span><?php $bi = 0; foreach ($balByCur as $bc => $bsum): ?><?php if ($bi++): ?><span class="sep">/</span><?php endif; ?><span class="cur"><?= h($bc) ?></span><?= number_format($bsum, 2) ?><?= jpy_hint((float) $bsum, $bc) ?><?php endforeach; ?></div>
             <?php endif; ?>
             <div class="hero-stats">
                 <div><span class="n"><?= count($tree) ?></span><span class="l">プロダクト</span></div>
