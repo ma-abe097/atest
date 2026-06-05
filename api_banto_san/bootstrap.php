@@ -351,11 +351,19 @@ function render_styles(): void { ?>
     .hero-amount .cur { font-size:18px; font-weight:700; opacity:.85; margin-right:4px; }
     .hero-amount.muted { color:#cfd6e6; }
     .jpyhint { font-size:.5em; font-weight:400; opacity:.7; margin-left:2px; white-space:nowrap; }
-    /* ヒーローの残高表示（Twilio/DataForSEO 等の残高を大きく見せる） */
-    .hero-balance { margin-top:12px; font-size:20px; font-weight:800; color:var(--accent-d); font-variant-numeric:tabular-nums; }
-    .hero-balance .lbl { display:block; font-size:11.5px; font-weight:700; letter-spacing:.04em; color:var(--muted); margin-bottom:1px; }
-    .hero-balance .cur { font-size:13px; font-weight:700; opacity:.85; margin-right:3px; }
-    .hero-balance .sep { color:var(--line); margin:0 8px; font-weight:400; }
+    /* ヒーローの残高表示（青背景の上なので金色＝視認性◎） */
+    .hero-balance { margin-top:12px; font-size:21px; font-weight:800; color:var(--gold); font-variant-numeric:tabular-nums; text-shadow:0 1px 2px rgba(0,0,0,.18); }
+    .hero-balance .lbl { display:block; font-size:11.5px; font-weight:700; letter-spacing:.04em; color:#fff; opacity:.9; margin-bottom:2px; text-shadow:none; }
+    .hero-balance .cur { font-size:13px; font-weight:700; opacity:.9; margin-right:3px; }
+    .hero-balance .sep { color:rgba(255,255,255,.45); margin:0 8px; font-weight:400; }
+    /* プロダクト詳細：箱→サイト→URL（ページ）の入れ子表示 */
+    .site-group { margin:7px 0 9px; }
+    .site-head { font-size:13px; color:var(--ink); display:flex; align-items:center; gap:5px; }
+    .site-head .sc { color:var(--accent); }
+    .url-row { white-space:nowrap; padding:1px 0 1px 24px; font-size:12.5px; color:var(--muted); display:flex; align-items:center; gap:5px; }
+    .url-row code { color:var(--ink); background:transparent; padding:0; }
+    tr.site-row > td { background:#f6faff; }
+    tr.site-row strong { color:var(--ink); }
     /* カテゴリ切替タブ（シンプルなピル型） */
     .noren-tabs { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px; }
     .noren-tab { border:1px solid var(--line); cursor:pointer; background:var(--card); color:var(--muted); font-weight:700; font-size:13px;
@@ -806,6 +814,7 @@ function db(): PDO
             secret_fp          TEXT,
             monthly_cost       REAL,
             balance            REAL,
+            cost_note          TEXT    NOT NULL DEFAULT '',
             currency           TEXT    NOT NULL DEFAULT 'USD',
             created_at         TEXT    NOT NULL,
             updated_at         TEXT    NOT NULL
@@ -926,7 +935,7 @@ function db(): PDO
 
     // projects.product を後付け
     $projCols = array_column($pdo->query('PRAGMA table_info(projects)')->fetchAll(), 'name');
-    foreach (['product' => "TEXT NOT NULL DEFAULT ''", 'cost_type' => "TEXT NOT NULL DEFAULT ''", 'cost_account' => "TEXT NOT NULL DEFAULT ''", 'balance' => 'REAL', 'credential_id' => 'INTEGER'] as $col => $def) {
+    foreach (['product' => "TEXT NOT NULL DEFAULT ''", 'cost_type' => "TEXT NOT NULL DEFAULT ''", 'cost_account' => "TEXT NOT NULL DEFAULT ''", 'balance' => 'REAL', 'credential_id' => 'INTEGER', 'cost_note' => "TEXT NOT NULL DEFAULT ''"] as $col => $def) {
         if (!in_array($col, $projCols, true)) {
             $pdo->exec("ALTER TABLE projects ADD COLUMN $col $def");
         }
@@ -1682,8 +1691,8 @@ function fetch_project_cost(int $gid, array $project): array
         default:
             throw new RuntimeException('この箱のコスト種別が未設定です。編集でコスト種別（OpenAI / Twilio 等）を選んでください。');
     }
-    db()->prepare('UPDATE projects SET monthly_cost = :m, currency = :c, balance = COALESCE(:bal, balance), updated_at = :u WHERE id = :id AND group_id = :g')
-        ->execute([':m' => $c['amount'], ':c' => $c['currency'], ':bal' => $balance, ':u' => now(), ':id' => (int) $project['id'], ':g' => $gid]);
+    db()->prepare('UPDATE projects SET monthly_cost = :m, currency = :c, balance = COALESCE(:bal, balance), cost_note = :note, updated_at = :u WHERE id = :id AND group_id = :g')
+        ->execute([':m' => $c['amount'], ':c' => $c['currency'], ':bal' => $balance, ':note' => (string) ($c['note'] ?? ''), ':u' => now(), ':id' => (int) $project['id'], ':g' => $gid]);
     // 当月スナップショットに記録（推移・前月比用）
     $project['monthly_cost'] = $c['amount']; $project['currency'] = $c['currency'];
     snapshot_box($gid, $project);
