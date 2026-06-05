@@ -137,6 +137,16 @@
         return data;
     }
 
+    /** 当月のOpenAI使用額を取得（cost.php）。未設定や失敗時も画面を壊さない。 */
+    async function fetchMonthlyCost() {
+        try {
+            const res = await fetch('cost.php');
+            return await res.json();
+        } catch (e) {
+            return null;
+        }
+    }
+
     /** 対象顧客群の foundMedia から「ドメイン × 何社で重複したか」のランキングを作る */
     function foundDomainsRanking(clients) {
         const counts = {};
@@ -153,7 +163,7 @@
     watch(() => [store.isSyncing, store.syncError], () => nextTick(refreshIcons));
 
     // ===== 公開 =====
-    window.AppCore = { store, isAdmin: IS_ADMIN, save, getMediaDetails, calculateRanking, exportClientsCSV, refreshIcons, searchClientMedia, foundDomainsRanking };
+    window.AppCore = { store, isAdmin: IS_ADMIN, save, getMediaDetails, calculateRanking, exportClientsCSV, refreshIcons, searchClientMedia, foundDomainsRanking, fetchMonthlyCost };
 })();
 
 

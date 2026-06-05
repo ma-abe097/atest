@@ -12,6 +12,20 @@ $pageScript = 'page-flag-search.js';
 require __DIR__ . '/layout_top.php';
 ?>
 <div class="max-w-6xl mx-auto space-y-6">
+
+    <!-- 当月のAPI使用額（OpenAI Adminキー設定時のみ表示） -->
+    <div v-if="monthlyCost && monthlyCost.enabled" class="flex justify-end">
+        <span class="inline-flex items-center gap-1.5 text-xs bg-white border border-gray-200 rounded-full px-3 py-1.5 shadow-sm">
+            <i data-lucide="circle-dollar-sign" class="w-4 h-4 text-green-600"></i>
+            <span class="text-gray-500">OpenAI 当月使用分:</span>
+            <template v-if="monthlyCost.error"><span class="text-gray-400">{{ monthlyCost.error }}</span></template>
+            <template v-else>
+                <span class="font-bold text-gray-800">¥{{ Number(monthlyCost.jpy).toLocaleString() }}</span>
+                <span class="text-gray-400">（約 ${{ monthlyCost.usd }} / レート{{ monthlyCost.rate }}）</span>
+            </template>
+        </span>
+    </div>
+
     <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
         <div class="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
             <label class="block text-sm font-bold text-gray-700 mb-2">リスト元（媒体）を選んで、その顧客が「他に利用している媒体」を見る</label>

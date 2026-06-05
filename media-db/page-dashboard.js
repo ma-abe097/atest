@@ -86,6 +86,9 @@
             // 期間内の顧客の foundMedia から「ドメイン × 何社」ランキング
             const foundRanking = computed(() => foundDomainsRanking(filteredClientsByDate.value));
 
+            // 当月のAPI使用額
+            const monthlyCost = ref(null);
+
             const exportCsv = () => {
                 const label = (dateRangeText.value || '全期間').replace(/ /g, '');
                 exportClientsCSV(filteredClientsByDate.value, `受注リスト_${label}.csv`);
@@ -93,10 +96,14 @@
 
             // リスト内容が変わったらアイコンを再描画
             watch(filteredClientsByDate, () => nextTick(refreshIcons));
-            onMounted(() => nextTick(refreshIcons));
+            onMounted(async () => {
+                nextTick(refreshIcons);
+                monthlyCost.value = await AppCore.fetchMonthlyCost();
+                nextTick(refreshIcons);
+            });
 
             return {
-                store,
+                store, monthlyCost,
                 filterStartDate, filterEndDate, resetDateFilter,
                 filteredClientsByDate, dateRangeText,
                 deleteClient, exportCsv, sourceMedia,

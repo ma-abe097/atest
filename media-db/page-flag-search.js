@@ -68,11 +68,17 @@
                 exportClientsCSV(filteredClientsByFlag.value, `逆引きリスト_${selectedMediaName.value}.csv`);
             };
 
+            const monthlyCost = ref(null);
+
             watch([selectedMediaId, filteredClientsByFlag], () => nextTick(refreshIcons));
-            onMounted(() => nextTick(refreshIcons));
+            onMounted(async () => {
+                nextTick(refreshIcons);
+                monthlyCost.value = await AppCore.fetchMonthlyCost();
+                nextTick(refreshIcons);
+            });
 
             return {
-                store, sourceMediaList,
+                store, sourceMediaList, monthlyCost,
                 selectedMediaId, selectedMediaName, filteredClientsByFlag, flaggedRanking,
                 searchOtherMedia, searchAllPending, searchingId, exportCsv,
             };

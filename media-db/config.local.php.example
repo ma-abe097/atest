@@ -20,8 +20,14 @@
 return [
     // ===== 他媒体検索（OpenAI） =====
     'SEARCH_PROVIDER' => 'openai',
-    'SEARCH_API_KEY'  => '',           // sk-...
+    'SEARCH_API_KEY'  => '',           // sk-...（検索用の通常キー）
     'SEARCH_MODEL'    => 'gpt-4o-mini',
+
+    // ===== 使用額の表示（任意）=====
+    // 当月の使用額を表示するには「Adminキー(sk-admin-...)」が必要（通常キーでは不可）。
+    // 発行: platform.openai.com → Settings → Organization → Admin keys
+    'OPENAI_ADMIN_KEY' => '',          // sk-admin-...
+    'USD_JPY_RATE'     => 155,         // ドル→円のおおよそのレート（表示用）
 
     // ===== Googleログイン（任意。空ならID/パスワードのみ） =====
     'GOOGLE_CLIENT_ID'      => '',      // xxxxxxxx.apps.googleusercontent.com
