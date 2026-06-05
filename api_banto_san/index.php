@@ -2066,6 +2066,10 @@ if ($route === 'product'):
     $punassigned = $unassignedByProduct[$pname] ?? [];
     $pprovider   = $providerOf[$pname] ?? '';
     $pCredId     = product_credential_id($gid, $pname);   // このプロダクトの既定キー
+    // このプロダクト名のAPIレコード（登録項目の編集用）
+    $papisStmt = db()->prepare('SELECT * FROM apis WHERE group_id = :g AND name = :n ORDER BY site, id');
+    $papisStmt->execute([':g' => $gid, ':n' => $pname]);
+    $papis = $papisStmt->fetchAll();
 
     // コスト（通貨別）
     $pcost = [];
@@ -2299,6 +2303,28 @@ if ($route === 'product'):
             </tbody>
         </table>
         <?php else: ?><p class="hint">まだ記録がありません。</p><?php endif; ?>
+    </div>
+    <?php endif; ?>
+
+    <?php if ($editable && $papis): ?>
+    <!-- API情報（登録項目の編集） -->
+    <div class="panel" style="margin-bottom:18px">
+        <h3 style="display:flex;align-items:center;gap:8px"><?= icon('product', 16) ?> API情報（プロバイダー等）</h3>
+        <p class="hint" style="margin:0 0 10px">登録時に入れた項目（プロバイダー・サイト・月額・担当者・各種URL・メモ）はここから後から修正できます。</p>
+        <table>
+            <thead><tr><th>API名</th><th>プロバイダー</th><th>サイト</th><th>月額</th><th></th></tr></thead>
+            <tbody>
+            <?php foreach ($papis as $ap): ?>
+                <tr>
+                    <td><span style="display:inline-flex;align-items:center;gap:8px"><?= provider_badge($ap['name'], 24, $prodMeta[$pname]['logo_color'] ?? null, $prodMeta[$pname]['logo_url'] ?? null) ?> <strong><?= h($ap['name']) ?></strong></span></td>
+                    <td><?= h($ap['provider']) ?: '<span class="muted">未設定</span>' ?></td>
+                    <td><?= h($ap['site']) ?: '<span class="muted">—</span>' ?></td>
+                    <td class="cost"><?= fmt_money($ap['monthly_cost'] === null ? null : (float) $ap['monthly_cost'], $ap['currency'] ?: 'JPY') ?></td>
+                    <td style="white-space:nowrap"><button class="link" type="button" onclick='openEdit(<?= htmlspecialchars(json_encode(["id"=>(int)$ap["id"],"name"=>$ap["name"],"provider"=>$ap["provider"],"site"=>$ap["site"],"monthly_cost"=>$ap["monthly_cost"],"currency"=>$ap["currency"],"status"=>$ap["status"],"owner"=>$ap["owner"],"key_location"=>$ap["key_location"],"billing_url"=>$ap["billing_url"],"docs_url"=>$ap["docs_url"],"notes"=>$ap["notes"],"cost_project"=>$ap["cost_project"] ?? "","secret_hint"=>$ap["secret_hint"]], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)'><?= icon('gear', 14) ?> 編集</button></td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
     </div>
     <?php endif; ?>
 
