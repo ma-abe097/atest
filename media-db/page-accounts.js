@@ -13,36 +13,49 @@
         setup() {
             const systemUsers = computed(() => store.users);
 
-            const userForm = ref({ name: '', loginId: '', password: '' });
+            const userForm = ref({ name: '', loginId: '', password: '', role: 'member' });
             const editingUser = ref(null);
+
+            const adminCount = () => store.users.filter(u => (u.role || 'member') === 'admin').length;
 
             const saveUser = () => {
                 if (editingUser.value) {
                     const index = store.users.findIndex(u => u.id === editingUser.value.id);
                     if (index !== -1) {
+                        // 最後の管理者を一般に降格しようとした場合は防ぐ
+                        if (store.users[index].role === 'admin' && userForm.value.role !== 'admin' && adminCount() <= 1) {
+                            alert('最後の管理者を一般に変更することはできません。先に別の管理者を作成してください。');
+                            return;
+                        }
                         store.users[index] = { ...store.users[index], ...userForm.value };
                     }
                 } else {
                     store.users.push({ id: genId('u'), ...userForm.value });
                 }
-                userForm.value = { name: '', loginId: '', password: '' };
+                userForm.value = { name: '', loginId: '', password: '', role: 'member' };
                 editingUser.value = null;
             };
 
             const editUser = (user) => {
                 editingUser.value = user;
-                userForm.value = { name: user.name, loginId: user.loginId, password: user.password };
+                userForm.value = { name: user.name, loginId: user.loginId, password: user.password, role: user.role || 'member' };
             };
 
             const cancelUserEdit = () => {
                 editingUser.value = null;
-                userForm.value = { name: '', loginId: '', password: '' };
+                userForm.value = { name: '', loginId: '', password: '', role: 'member' };
             };
 
             const deleteUser = (id) => {
-                if (store.users.length > 1) {
-                    store.users = store.users.filter(u => u.id !== id);
+                const target = store.users.find(u => u.id === id);
+                if (!target) return;
+                if (store.users.length <= 1) return;
+                if ((target.role || 'member') === 'admin' && adminCount() <= 1) {
+                    alert('最後の管理者は削除できません。先に別の管理者を作成してください。');
+                    return;
                 }
+                if (!confirm(`「${target.name}」を削除しますか？`)) return;
+                store.users = store.users.filter(u => u.id !== id);
             };
 
             // このページは顧客リストを直接扱わないが、ヘッダーのCSVボタンは全顧客を出力

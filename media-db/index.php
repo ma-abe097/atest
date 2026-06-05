@@ -174,7 +174,7 @@ $domHint  = implode(', ', mdb_allowed_domains());
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ログイン | <?= h(MDB_APP_NAME) ?></title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="tailwind.css">
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         html { background-color: #1f2937; }    /* 白い点滅を防ぐ */

@@ -56,8 +56,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         json_out(400, ['error' => 'invalid_payload', 'message' => 'clients が含まれていません。']);
     }
 
+    // アカウント(users)は管理者のみ変更可。非管理者の保存では既存のusersを維持する。
+    $current = load_data();
+    $users = is_admin() ? ($body['users'] ?? []) : $current['users'];
+
     $ok = save_data([
-        'users'   => $body['users']   ?? [],
+        'users'   => $users,
         'media'   => $body['media']   ?? [],
         'clients' => $body['clients'] ?? [],
     ]);

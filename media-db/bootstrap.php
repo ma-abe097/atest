@@ -97,8 +97,8 @@ function mdb_default_data(): array
 {
     return [
         'users' => [
-            ['id' => 'u1', 'name' => 'システム管理者', 'loginId' => 'admin', 'password' => 'password'],
-            ['id' => 'u2', 'name' => '営業担当',       'loginId' => 'sales', 'password' => '1234'],
+            ['id' => 'u1', 'name' => 'システム管理者', 'loginId' => 'admin', 'password' => 'password', 'role' => 'admin'],
+            ['id' => 'u2', 'name' => '営業担当',       'loginId' => 'sales', 'password' => '1234',     'role' => 'member'],
         ],
         'media' => [
             ['id' => 'm1', 'name' => 'イツザイ',     'domain' => 'itsuzai.jp'],
@@ -139,6 +139,15 @@ function load_data(): array
     }
     // キー欠落に備えて補完
     $data += ['users' => [], 'media' => [], 'clients' => []];
+
+    // 権限(role)の補完：未設定なら loginId 'admin' を管理者、それ以外は一般に。
+    foreach ($data['users'] as &$u) {
+        if (!isset($u['role']) || !in_array($u['role'], ['admin', 'member'], true)) {
+            $u['role'] = (($u['loginId'] ?? '') === 'admin') ? 'admin' : 'member';
+        }
+    }
+    unset($u);
+
     return $data;
 }
 
@@ -184,6 +193,13 @@ function current_user(): ?array
         }
     }
     return null;
+}
+
+/** 現在のユーザーが管理者(role=admin)か */
+function is_admin(): bool
+{
+    $u = current_user();
+    return $u !== null && ($u['role'] ?? '') === 'admin';
 }
 
 /** 未ログインならログイン画面へ飛ばす。ログイン中ならユーザー行を返す。 */
