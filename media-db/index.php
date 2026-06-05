@@ -158,6 +158,15 @@ if ($user) {
  * ============================================================ */
 load_data();   // 初回アクセス時に初期データを用意
 $csrf = csrf_token();
+
+// Googleコールバック等からのエラーを表示
+if ($error === '' && !empty($_SESSION['login_error'])) {
+    $error = (string) $_SESSION['login_error'];
+}
+unset($_SESSION['login_error']);
+
+$googleOn = google_enabled();
+$domHint  = implode(', ', mdb_allowed_domains());
 ?>
 <!DOCTYPE html>
 <html lang="ja">
@@ -167,44 +176,82 @@ $csrf = csrf_token();
     <title>ログイン | <?= h(MDB_APP_NAME) ?></title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
-    <style>[v-cloak]{display:none}</style>
+    <style>
+        html { background-color: #1f2937; }    /* 白い点滅を防ぐ */
+        @view-transition { navigation: auto; } /* 画面遷移をなめらかに */
+        [v-cloak]{display:none}
+    </style>
 </head>
 <body class="bg-gray-800 text-gray-800 font-sans h-screen flex items-center justify-center">
 
     <div class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-sm">
         <div class="text-center mb-6">
-            <div class="bg-blue-600 text-white p-3 rounded-full inline-block mb-3">
-                <i data-lucide="lock" class="w-8 h-8"></i>
+            <div class="bg-blue-50 text-blue-700 p-3 rounded-2xl inline-block mb-3 shadow-sm">
+                <i data-lucide="zap" class="w-8 h-8"></i>
             </div>
-            <h2 class="text-2xl font-bold text-gray-800">管理システム ログイン</h2>
-            <p class="text-sm text-gray-500 mt-1"><?= h(MDB_APP_NAME) ?></p>
+            <h2 class="text-2xl font-bold text-gray-900">サインイン</h2>
+            <p class="text-sm text-gray-500 mt-1">
+                <?php if ($googleOn && $domHint !== ''): ?>
+                    <span class="font-medium text-gray-700 bg-gray-100 rounded px-1.5 py-0.5">@<?= h($domHint) ?></span> のGoogleアカウントでログインしてください
+                <?php else: ?>
+                    <?= h(MDB_APP_NAME) ?>
+                <?php endif; ?>
+            </p>
         </div>
 
-        <form method="post" action="index.php" class="space-y-4">
-            <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-            <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">ログインID</label>
-                <input type="text" name="loginId" required autofocus
-                       class="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-blue-500 focus:border-blue-500">
+        <?php if ($error !== ''): ?>
+            <p class="text-red-600 text-sm font-medium bg-red-50 border border-red-200 rounded-lg p-2.5 mb-4 text-center"><?= h($error) ?></p>
+        <?php endif; ?>
+
+        <?php if ($googleOn): ?>
+            <a href="oauth.php"
+               class="flex items-center justify-center gap-3 w-full border border-gray-300 rounded-lg py-3 px-4 font-bold text-gray-700 hover:bg-gray-50 transition shadow-sm">
+                <svg class="w-5 h-5" viewBox="0 0 48 48" aria-hidden="true">
+                    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+                    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.28-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+                    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+                </svg>
+                Googleでサインイン
+            </a>
+            <div class="mt-4 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg p-3 flex items-start gap-2">
+                <i data-lucide="shield-check" class="w-4 h-4 text-blue-600 shrink-0 mt-0.5"></i>
+                <span>OAuth 2.0 による安全な認証です。パスワードは弊社サーバーには保存されません。</span>
             </div>
-            <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">パスワード</label>
-                <div class="relative">
-                    <input type="password" name="password" id="password" required
-                           class="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-blue-500 focus:border-blue-500 pr-10">
-                    <button type="button" id="togglePw"
-                            class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 hover:text-blue-600">
-                        <i data-lucide="eye" class="w-5 h-5"></i>
-                    </button>
+
+            <details class="mt-5">
+                <summary class="text-xs text-gray-400 cursor-pointer hover:text-gray-600 text-center">ID・パスワードでログイン（管理者用）</summary>
+                <form method="post" action="index.php" class="space-y-3 mt-3">
+                    <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+                    <input type="text" name="loginId" placeholder="ログインID" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm">
+                    <input type="password" name="password" placeholder="パスワード" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm">
+                    <button type="submit" class="w-full bg-gray-700 text-white font-medium py-2.5 rounded-lg hover:bg-gray-800 text-sm">ログイン</button>
+                </form>
+            </details>
+        <?php else: ?>
+            <form method="post" action="index.php" class="space-y-4">
+                <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">ログインID</label>
+                    <input type="text" name="loginId" required autofocus
+                           class="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-blue-500 focus:border-blue-500">
                 </div>
-            </div>
-            <?php if ($error !== ''): ?>
-                <p class="text-red-500 text-sm font-medium"><?= h($error) ?></p>
-            <?php endif; ?>
-            <button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition">
-                ログイン
-            </button>
-        </form>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">パスワード</label>
+                    <div class="relative">
+                        <input type="password" name="password" id="password" required
+                               class="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-blue-500 focus:border-blue-500 pr-10">
+                        <button type="button" id="togglePw"
+                                class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 hover:text-blue-600">
+                            <i data-lucide="eye" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+                </div>
+                <button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition">
+                    ログイン
+                </button>
+            </form>
+        <?php endif; ?>
     </div>
 
     <script>
@@ -212,12 +259,14 @@ $csrf = csrf_token();
         (function () {
             const btn = document.getElementById('togglePw');
             const input = document.getElementById('password');
-            btn.addEventListener('click', function () {
-                const show = input.type === 'password';
-                input.type = show ? 'text' : 'password';
-                btn.innerHTML = '<i data-lucide="' + (show ? 'eye-off' : 'eye') + '" class="w-5 h-5"></i>';
-                window.lucide.createIcons();
-            });
+            if (btn && input) {
+                btn.addEventListener('click', function () {
+                    const show = input.type === 'password';
+                    input.type = show ? 'text' : 'password';
+                    btn.innerHTML = '<i data-lucide="' + (show ? 'eye-off' : 'eye') + '" class="w-5 h-5"></i>';
+                    window.lucide.createIcons();
+                });
+            }
             window.lucide.createIcons();
         })();
     </script>

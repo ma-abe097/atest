@@ -215,6 +215,190 @@ function do_logout(): void
 }
 
 /* ------------------------------------------------------------------ *
+ *  Googleログイン（OAuth 2.0 / OpenID Connect）
+ *  config.local.php に GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET を設定すると有効化。
+ *  ALLOWED_EMAIL_DOMAINS（例: sk-t.com）でログイン可能ドメインを限定できる。
+ * ------------------------------------------------------------------ */
+/** Googleログインが使える設定になっているか */
+function google_enabled(): bool
+{
+    return (string) mdb_config('GOOGLE_CLIENT_ID', '') !== '' && (string) mdb_config('GOOGLE_CLIENT_SECRET', '') !== '';
+}
+
+/** このアプリのベースURL（末尾スラッシュなし） */
+function mdb_base_url(): string
+{
+    $https  = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+              || (($_SERVER['SERVER_PORT'] ?? '') === '443')
+              || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+    $scheme = $https ? 'https' : 'http';
+    $host   = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    $dir    = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
+    return $scheme . '://' . $host . $dir;
+}
+
+/** GoogleコールバックURL（oauth.php）。Google Cloud側の「承認済みリダイレクトURI」に登録する値。 */
+function google_redirect_uri(): string
+{
+    $c = mdb_config('GOOGLE_REDIRECT_URI', '');
+    return $c ? (string) $c : mdb_base_url() . '/oauth.php';
+}
+
+/** ログイン許可ドメインの配列（未設定なら空＝制限なし） */
+function mdb_allowed_domains(): array
+{
+    $raw = trim((string) mdb_config('ALLOWED_EMAIL_DOMAINS', ''));
+    if ($raw === '') {
+        return [];
+    }
+    $parts = preg_split('/[\s,]+/', strtolower($raw), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+    return array_map(static fn($d) => ltrim($d, '@'), $parts);
+}
+
+/** そのメールがログイン許可ドメインか（未設定なら全許可） */
+function mdb_email_allowed(string $email): bool
+{
+    $allowed = mdb_allowed_domains();
+    if (!$allowed) {
+        return true;
+    }
+    $at = strrpos($email, '@');
+    return $at !== false && in_array(strtolower(substr($email, $at + 1)), $allowed, true);
+}
+
+/** 簡易HTTP（curl優先）。戻り値: ['status'=>int,'body'=>string,'error'=>string] */
+function mdb_http(string $method, string $url, array $headers = [], ?string $body = null): array
+{
+    if (function_exists('curl_init')) {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CUSTOMREQUEST  => $method,
+            CURLOPT_HTTPHEADER     => $headers,
+            CURLOPT_TIMEOUT        => 15,
+        ]);
+        if ($body !== null) {
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
+        }
+        $resp = curl_exec($ch);
+        $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $err  = curl_error($ch);
+        curl_close($ch);
+        return ['status' => $code, 'body' => $resp === false ? '' : (string) $resp, 'error' => $resp === false ? $err : ''];
+    }
+    $ctx = stream_context_create(['http' => [
+        'method' => $method, 'header' => implode("\r\n", $headers), 'content' => $body,
+        'timeout' => 15, 'ignore_errors' => true,
+    ]]);
+    $resp = @file_get_contents($url, false, $ctx);
+    $code = 0;
+    if (isset($http_response_header[0]) && preg_match('#\s(\d{3})\s#', $http_response_header[0], $m)) {
+        $code = (int) $m[1];
+    }
+    return ['status' => $code, 'body' => $resp === false ? '' : $resp, 'error' => $resp === false ? 'request failed' : ''];
+}
+
+/** Googleの認可URL（stateをセッションに保存） */
+function google_login_url(): string
+{
+    $state = bin2hex(random_bytes(16));
+    $_SESSION['oauth_state'] = $state;
+    $params = [
+        'client_id'     => (string) mdb_config('GOOGLE_CLIENT_ID'),
+        'redirect_uri'  => google_redirect_uri(),
+        'response_type' => 'code',
+        'scope'         => 'openid email profile',
+        'state'         => $state,
+        'access_type'   => 'online',
+        'prompt'        => 'select_account',
+    ];
+    return 'https://accounts.google.com/o/oauth2/v2/auth?' . http_build_query($params);
+}
+
+/**
+ * Googleコールバック処理。成功で ['email','name','picture'] を返し、失敗で例外。
+ */
+function google_handle_callback(): array
+{
+    $state = $_GET['state'] ?? '';
+    $sess  = $_SESSION['oauth_state'] ?? '';
+    unset($_SESSION['oauth_state']);
+    if ($state === '' || !hash_equals($sess, $state)) {
+        throw new RuntimeException('認証の照合に失敗しました（state不一致）。もう一度お試しください。');
+    }
+    if (isset($_GET['error'])) {
+        throw new RuntimeException('Google認証がキャンセルされました。');
+    }
+    $code = $_GET['code'] ?? '';
+    if ($code === '') {
+        throw new RuntimeException('認可コードがありません。');
+    }
+    $tok = mdb_http('POST', 'https://oauth2.googleapis.com/token',
+        ['Content-Type: application/x-www-form-urlencoded'],
+        http_build_query([
+            'code'          => $code,
+            'client_id'     => (string) mdb_config('GOOGLE_CLIENT_ID'),
+            'client_secret' => (string) mdb_config('GOOGLE_CLIENT_SECRET'),
+            'redirect_uri'  => google_redirect_uri(),
+            'grant_type'    => 'authorization_code',
+        ])
+    );
+    if ($tok['status'] !== 200) {
+        throw new RuntimeException('トークン取得に失敗しました (HTTP ' . $tok['status'] . ')。');
+    }
+    $accessToken = json_decode($tok['body'], true)['access_token'] ?? '';
+    if ($accessToken === '') {
+        throw new RuntimeException('アクセストークンが取得できませんでした。');
+    }
+    $ui = mdb_http('GET', 'https://openidconnect.googleapis.com/v1/userinfo', ['Authorization: Bearer ' . $accessToken]);
+    if ($ui['status'] !== 200) {
+        throw new RuntimeException('ユーザー情報の取得に失敗しました。');
+    }
+    $info  = json_decode($ui['body'], true) ?: [];
+    $email = strtolower(trim((string) ($info['email'] ?? '')));
+    if ($email === '') {
+        throw new RuntimeException('メールアドレスが取得できませんでした。');
+    }
+    return ['email' => $email, 'name' => (string) ($info['name'] ?? ''), 'picture' => (string) ($info['picture'] ?? '')];
+}
+
+/**
+ * Googleプロフィールでログイン確立。data.json の users をメールで照合し、
+ * 無ければ（ドメイン許可済み前提で）自動作成する。戻り値: user 配列。
+ */
+function login_with_google(array $info): array
+{
+    $data  = load_data();
+    $email = strtolower($info['email']);
+    $idx = null;
+    foreach ($data['users'] as $i => $u) {
+        if (strtolower((string) ($u['email'] ?? '')) === $email) { $idx = $i; break; }
+    }
+    if ($idx === null) {
+        $user = [
+            'id'      => 'u' . time() . random_int(100, 999),
+            'name'    => $info['name'] !== '' ? $info['name'] : $email,
+            'loginId' => $email,
+            'password' => '',          // Googleログイン専用（パスワードなし）
+            'email'   => $email,
+            'auth'    => 'google',
+        ];
+        $data['users'][] = $user;
+        save_data($data);
+    } else {
+        $user = $data['users'][$idx];
+        // 表示名が空なら補完
+        if (($user['name'] ?? '') === '' && $info['name'] !== '') {
+            $data['users'][$idx]['name'] = $info['name'];
+            $user['name'] = $info['name'];
+            save_data($data);
+        }
+    }
+    do_login($user);
+    return $user;
+}
+
+/* ------------------------------------------------------------------ *
  *  画面共通：サイドメニュー定義
  *  キー => [表示名, lucideアイコン名, リンク先ファイル]
  * ------------------------------------------------------------------ */

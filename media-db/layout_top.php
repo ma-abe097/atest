@@ -35,6 +35,12 @@ if (!isset($data))       { $data = load_data(); }
         [v-cloak] { display: none; }
         .sync-spin { animation: spin 1s linear infinite; }
         @keyframes spin { 100% { transform: rotate(360deg); } }
+
+        /* ページ切り替えをなめらかに（白い点滅を防ぐ＋ふわっと表示） */
+        html { background-color: #f3f4f6; }
+        @view-transition { navigation: auto; }
+        @keyframes mdbFade { from { opacity: 0; } to { opacity: 1; } }
+        #app { animation: mdbFade .2s ease-out; }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800 font-sans h-screen flex overflow-hidden">
