@@ -2228,7 +2228,7 @@ if ($route === 'product'):
                     <td><span id="bc<?= $bi ?>" class="caret"><?= icon('chevron', 16) ?></span></td>
                     <td><?= icon('box') ?> <strong><?= h($b['name']) ?></strong> <span class="muted">（<?= count($bl['urls']) ?> URL）</span></td>
                     <td class="muted"><?= h(implode('、', array_slice(array_map('strval', $bl['sites']), 0, 4))) ?><?= count($bl['sites']) > 4 ? ' ほか' : '' ?></td>
-                    <td class="cost"><?= fmt_money($b['monthly_cost'] === null ? null : (float) $b['monthly_cost'], $b['currency'] ?: 'USD') ?><?php if (($b['balance'] ?? null) !== null): ?><div class="hint">残高 <?= h($b['currency'] ?: 'USD') ?> <?= number_format((float) $b['balance'], 2) ?></div><?php endif; ?></td>
+                    <td class="cost"><?= fmt_money($b['monthly_cost'] === null ? null : (float) $b['monthly_cost'], $b['currency'] ?: 'USD') ?><?php if (($b['balance'] ?? null) !== null): ?><div class="hint">残高 <?= h($b['currency'] ?: 'USD') ?> <?= number_format((float) $b['balance'], 2) ?></div><?php endif; ?><?php if (trim((string) ($b['cost_note'] ?? '')) !== ''): ?><div class="hint" style="white-space:normal;max-width:240px">ⓘ <?= h($b['cost_note']) ?></div><?php endif; ?></td>
                     <?php if ($editable): ?>
                     <td class="hide-sm" style="white-space:nowrap" onclick="event.stopPropagation()">
                         <?php if (($b['cost_type'] ?? '') !== '' || trim((string) $b['openai_project_id']) !== '' || ($b['credential_id'] ?? null) || $pCredId !== null): ?>
@@ -2240,15 +2240,29 @@ if ($route === 'product'):
                     </td>
                     <?php endif; ?>
                 </tr>
-                <?php foreach ($bl['urls'] as $f):
-                    $pathStr = usage_site($f) . ' / ' . $f['file'] . ($f['line'] !== null ? ':' . (int) $f['line'] : ''); ?>
+                <?php
+                    // サイト（＝ファイル先頭フォルダ）ごとにページ(URL)をまとめる
+                    $bySite = [];
+                    foreach ($bl['urls'] as $f) { $bySite[usage_site($f)][] = $f; }
+                    ksort($bySite);
+                ?>
+                <?php foreach ($bySite as $site => $sfiles): ?>
+                <tr class="box<?= $bi ?>-url site-row" style="display:none">
+                    <td></td>
+                    <td style="padding-left:20px"><?= icon('globe', 15) ?> <strong><?= h($site) ?></strong></td>
+                    <td class="muted"><?= count($sfiles) ?> ページ</td>
+                    <td></td><?php if ($editable): ?><td class="hide-sm"></td><?php endif; ?>
+                </tr>
+                <?php foreach ($sfiles as $f):
+                    $pathStr = $site . ' / ' . $f['file'] . ($f['line'] !== null ? ':' . (int) $f['line'] : ''); ?>
                 <tr class="box<?= $bi ?>-url" style="display:none">
                     <td><?php if ($editable): ?><input type="checkbox" class="dchk" value="<?= (int) $f['id'] ?>" style="width:auto"><?php endif; ?></td>
-                    <td style="padding-left:20px"><?= $f['is_key'] ? icon('key', 15) : icon('file', 15) ?> <code><?= h($f['file']) ?><?= $f['line'] !== null ? ':' . (int) $f['line'] : '' ?></code>
+                    <td style="padding-left:42px"><?= $f['is_key'] ? icon('key', 15) : icon('file', 15) ?> <code><?= h($f['file']) ?><?= $f['line'] !== null ? ':' . (int) $f['line'] : '' ?></code>
                         <button class="link" type="button" title="コピー" onclick="copyText(<?= htmlspecialchars(json_encode($pathStr, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)"><?= icon('copy', 15) ?></button></td>
-                    <td class="muted"><?= icon('globe', 15) ?> <?= h(usage_site($f)) ?></td>
+                    <td></td>
                     <td></td><?php if ($editable): ?><td class="hide-sm" style="white-space:nowrap"><form method="post" style="display:inline" onsubmit="return confirm('このURLを削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_usage"><input type="hidden" name="id" value="<?= (int) $f['id'] ?>"><button class="link danger" type="submit" title="URLを削除"><?= icon('trash', 15) ?></button></form></td><?php endif; ?>
                 </tr>
+                <?php endforeach; ?>
                 <?php endforeach; ?>
             <?php endforeach; ?>
             <?php if ($punassigned): $uurls = dedup_urls($punassigned); $bi++; ?>
@@ -2257,15 +2271,28 @@ if ($route === 'product'):
                     <td><?= icon('box') ?> <strong>未割当</strong> <span class="muted">（<?= count($uurls) ?> URL）</span></td>
                     <td class="muted">—</td><td class="cost">—</td><?php if ($editable): ?><td class="hide-sm"></td><?php endif; ?>
                 </tr>
-                <?php foreach ($uurls as $f):
-                    $pathStr = usage_site($f) . ' / ' . $f['file'] . ($f['line'] !== null ? ':' . (int) $f['line'] : ''); ?>
+                <?php
+                    $uBySite = [];
+                    foreach ($uurls as $f) { $uBySite[usage_site($f)][] = $f; }
+                    ksort($uBySite);
+                ?>
+                <?php foreach ($uBySite as $site => $sfiles): ?>
+                <tr class="box<?= $bi ?>-url site-row" style="display:none">
+                    <td></td>
+                    <td style="padding-left:20px"><?= icon('globe', 15) ?> <strong><?= h($site) ?></strong></td>
+                    <td class="muted"><?= count($sfiles) ?> ページ</td>
+                    <td></td><?php if ($editable): ?><td class="hide-sm"></td><?php endif; ?>
+                </tr>
+                <?php foreach ($sfiles as $f):
+                    $pathStr = $site . ' / ' . $f['file'] . ($f['line'] !== null ? ':' . (int) $f['line'] : ''); ?>
                 <tr class="box<?= $bi ?>-url" style="display:none">
                     <td><?php if ($editable): ?><input type="checkbox" class="dchk" value="<?= (int) $f['id'] ?>" style="width:auto"><?php endif; ?></td>
-                    <td style="padding-left:20px"><?= $f['is_key'] ? icon('key', 15) : icon('file', 15) ?> <code><?= h($f['file']) ?><?= $f['line'] !== null ? ':' . (int) $f['line'] : '' ?></code>
+                    <td style="padding-left:42px"><?= $f['is_key'] ? icon('key', 15) : icon('file', 15) ?> <code><?= h($f['file']) ?><?= $f['line'] !== null ? ':' . (int) $f['line'] : '' ?></code>
                         <button class="link" type="button" title="コピー" onclick="copyText(<?= htmlspecialchars(json_encode($pathStr, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)"><?= icon('copy', 15) ?></button></td>
-                    <td class="muted"><?= icon('globe', 15) ?> <?= h(usage_site($f)) ?></td>
+                    <td></td>
                     <td></td><?php if ($editable): ?><td class="hide-sm" style="white-space:nowrap"><form method="post" style="display:inline" onsubmit="return confirm('このURLを削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_usage"><input type="hidden" name="id" value="<?= (int) $f['id'] ?>"><button class="link danger" type="submit" title="URLを削除"><?= icon('trash', 15) ?></button></form></td><?php endif; ?>
                 </tr>
+                <?php endforeach; ?>
                 <?php endforeach; ?>
             <?php endif; ?>
             <?php if (!$boxList && !$punassigned): ?>
@@ -2401,14 +2428,6 @@ if ($route === 'product'):
                 <?php endforeach; ?>
             <?php else: ?>
                 <div class="hero-amount muted">—</div>
-            <?php endif; ?>
-            <?php
-            // 残高合計（Twilio/DataForSEO 等）：全箱の残高を通貨ごとに合算
-            $balByCur = [];
-            foreach ($projects as $b) { if (($b['balance'] ?? null) !== null) { $bc = $b['currency'] ?: 'USD'; $balByCur[$bc] = ($balByCur[$bc] ?? 0) + (float) $b['balance']; } }
-            ?>
-            <?php if ($balByCur): ?>
-                <div class="hero-balance"><span class="lbl">残高合計</span><?php $bi = 0; foreach ($balByCur as $bc => $bsum): ?><?php if ($bi++): ?><span class="sep">/</span><?php endif; ?><span class="cur"><?= h($bc) ?></span><?= number_format($bsum, 2) ?><?= jpy_hint((float) $bsum, $bc) ?><?php endforeach; ?></div>
             <?php endif; ?>
             <div class="hero-stats">
                 <div><span class="n"><?= count($tree) ?></span><span class="l">プロダクト</span></div>
@@ -2627,7 +2646,7 @@ if ($route === 'product'):
         ?>
             <tr class="prod<?= $gi ?> p<?= $gi ?>-proj" style="display:none">
                 <td style="text-align:right"><span id="jc<?= $gi ?>_<?= $pj ?>" class="caret" onclick="toggleProj(<?= $gi ?>,<?= $pj ?>)" style="cursor:pointer"><?= icon('chevron', 16) ?></span></td>
-                <td style="padding-left:24px"><?= icon('box') ?> <?= h($boxLabel) ?> <span class="muted">（<?= count($urls) ?> URL）</span><?php if ($proj && ($proj['balance'] ?? null) !== null): ?> <span class="muted">｜残高 <?= h($proj['currency'] ?: 'USD') ?> <?= number_format((float) $proj['balance'], 2) ?></span><?php endif; ?></td>
+                <td style="padding-left:24px"><?= icon('box') ?> <?= h($boxLabel) ?> <span class="muted">（<?= count($urls) ?> URL）</span><?php if ($proj && ($proj['balance'] ?? null) !== null): ?> <span class="muted">｜残高 <?= h($proj['currency'] ?: 'USD') ?> <?= number_format((float) $proj['balance'], 2) ?></span><?php endif; ?><?php if ($proj && trim((string) ($proj['cost_note'] ?? '')) !== ''): ?><div class="hint" style="margin:2px 0 0 24px">ⓘ <?= h($proj['cost_note']) ?></div><?php endif; ?></td>
                 <td class="cost"><?= $boxMoney ?></td>
                 <td class="hide-sm" style="white-space:nowrap" onclick="event.stopPropagation()">
                     <?php if ($editable && $proj): ?>
@@ -2645,17 +2664,26 @@ if ($route === 'product'):
                 <td colspan="3" style="padding-left:48px">
                     <?php if (!$urls): ?><span class="muted">URLなし（移動バーでこの箱へURL/サイトを割り当てできます）</span><?php endif; ?>
                     <?php if ($editable && $urls): ?><label class="hint" style="display:inline-block;margin-bottom:4px"><input type="checkbox" onchange="selAllBox(this,<?= $gi ?>,<?= $pj ?>)" style="width:auto"> この箱のURLを全選択</label><?php endif; ?>
-                    <?php foreach ($urls as $f):
-                        $fsite = usage_site($f);
-                        $pathStr = $fsite . ' / ' . $f['file'] . ($f['line'] !== null ? ':' . (int) $f['line'] : '');
+                    <?php
+                        // サイト（＝ファイルの先頭フォルダ）ごとにページ(URL)をまとめる
+                        $bySite = [];
+                        foreach ($urls as $f) { $bySite[usage_site($f)][] = $f; }
+                        ksort($bySite);
                     ?>
-                        <div style="white-space:nowrap">
-                            <?php if ($editable): ?><input type="checkbox" class="moveChk" value="<?= (int) $f['id'] ?>" onchange="updMoveCount()" style="width:auto"><?php endif; ?>
-                            <?= $f['is_key'] ? icon('key', 15) : icon('file', 15) ?>
-                            <strong><?= icon('globe', 15) ?> <?= h($fsite) ?></strong>
-                            <code><?= h($f['file']) ?><?= $f['line'] !== null ? ':' . (int) $f['line'] : '' ?></code>
-                            <button class="link" type="button" title="コピー" onclick="copyText(<?= htmlspecialchars(json_encode($pathStr, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)"><?= icon('copy', 15) ?></button>
-                            <?php if ($editable): ?><form method="post" style="display:inline" onsubmit="return confirm('このURLを削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_usage"><input type="hidden" name="id" value="<?= (int) $f['id'] ?>"><button class="link danger" type="submit" title="URLを削除"><?= icon('trash', 15) ?></button></form><?php endif; ?>
+                    <?php foreach ($bySite as $site => $sfiles): ?>
+                        <div class="site-group">
+                            <div class="site-head"><span class="sc"><?= icon('globe', 15) ?></span> <strong><?= h($site) ?></strong> <span class="muted" style="font-weight:400">（<?= count($sfiles) ?> ページ）</span></div>
+                            <?php foreach ($sfiles as $f):
+                                $pathStr = $site . ' / ' . $f['file'] . ($f['line'] !== null ? ':' . (int) $f['line'] : '');
+                            ?>
+                                <div class="url-row">
+                                    <?php if ($editable): ?><input type="checkbox" class="moveChk" value="<?= (int) $f['id'] ?>" onchange="updMoveCount()" style="width:auto"><?php endif; ?>
+                                    <?= $f['is_key'] ? icon('key', 14) : icon('file', 14) ?>
+                                    <code><?= h($f['file']) ?><?= $f['line'] !== null ? ':' . (int) $f['line'] : '' ?></code>
+                                    <button class="link" type="button" title="コピー" onclick="copyText(<?= htmlspecialchars(json_encode($pathStr, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)"><?= icon('copy', 14) ?></button>
+                                    <?php if ($editable): ?><form method="post" style="display:inline" onsubmit="return confirm('このURLを削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_usage"><input type="hidden" name="id" value="<?= (int) $f['id'] ?>"><button class="link danger" type="submit" title="URLを削除"><?= icon('trash', 14) ?></button></form><?php endif; ?>
+                                </div>
+                            <?php endforeach; ?>
                         </div>
                     <?php endforeach; ?>
                 </td>
