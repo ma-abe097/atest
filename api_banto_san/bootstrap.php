@@ -405,6 +405,12 @@ function render_styles(): void { ?>
     .bar-track { flex:1; height:10px; background:#eef1f4; border-radius:6px; overflow:hidden; }
     .bar-fill { height:100%; border-radius:6px; }
     .bar-row .v { flex:0 0 auto; font-variant-numeric:tabular-nums; font-weight:700; }
+    /* コンパクト表示（サイト別URL数など、補助的な内訳を小さく見せる） */
+    .compact-bars h3 { font-size:13px; font-weight:700; color:var(--muted); margin:0 0 6px; }
+    .compact-bars .bar-row { margin:2px 0; font-size:11.5px; gap:8px; }
+    .compact-bars .bar-row .nm { flex-basis:48%; }
+    .compact-bars .bar-row .nm .ic { width:13px; height:13px; }
+    .compact-bars .bar-track { height:6px; }
     .product-link { color:var(--accent); text-decoration:none; font-size:13px; word-break:break-all; }
     .product-link:hover { text-decoration:underline; }
     /* プロダクト一覧の「詳細」ピルボタン */

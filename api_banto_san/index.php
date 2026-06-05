@@ -2232,7 +2232,7 @@ if ($route === 'product'):
             <?php endif; ?>
         </div>
         <!-- サイト別 URL 件数 -->
-        <div class="panel">
+        <div class="panel compact-bars">
             <h3>サイト別 利用箇所（URL数）</h3>
             <?php if ($siteCount): $dc = donut_colors(); $si = 0; foreach ($siteCount as $st => $cnt): ?>
                 <div class="bar-row">
