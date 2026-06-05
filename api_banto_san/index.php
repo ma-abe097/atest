@@ -1107,7 +1107,7 @@ php scan.php --path /path/to/site --push \
                 <td class="muted"><?= h($t['created_at']) ?></td>
                 <td>
                     <?php if ((int) $t['revoked'] === 0): ?>
-                        <form method="post" onsubmit="return confirm('このトークンを失効しますか？')">
+                        <form method="post" onsubmit="return abtConfirmForm(this, 'このトークンを失効しますか？')">
                             <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
                             <input type="hidden" name="action" value="revoke_token">
                             <input type="hidden" name="token_id" value="<?= (int) $t['id'] ?>">
@@ -1191,7 +1191,7 @@ function render_scan_page(array $user, array $group, int $gid): void
                                 <input type="hidden" name="target_id" value="<?= (int) $t['id'] ?>">
                                 <button class="primary" type="submit">スキャン</button>
                             </form>
-                            <form method="post" style="display:inline" onsubmit="return confirm('「<?= h($t['label']) ?>」を削除しますか？')">
+                            <form method="post" style="display:inline" onsubmit="return abtConfirmForm(this, '「<?= h($t['label']) ?>」を削除しますか？')">
                                 <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
                                 <input type="hidden" name="action" value="delete_target">
                                 <input type="hidden" name="target_id" value="<?= (int) $t['id'] ?>">
@@ -1566,7 +1566,7 @@ if ($route === 'accounts'):
                         <td class="hide-sm note-cell"><?= nl2br(h($a['notes'])) ?: '<span class="muted">—</span>' ?></td>
                         <td style="white-space:nowrap">
                             <button class="link" type="button" onclick='openAccount(<?= json_encode(["id"=>(int)$a["id"],"category"=>$a["category"],"service"=>$a["service"],"login_id"=>$a["login_id"],"url"=>$a["url"],"notes"=>$a["notes"],"secret_hint"=>$a["secret_hint"]], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
-                            <?php if (can_manage()): ?><form method="post" style="display:inline" onsubmit="return confirm('「<?= h($a['service']) ?>」を削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_account"><input type="hidden" name="account_id" value="<?= (int) $a['id'] ?>"><button class="link danger" type="submit"><?= icon('trash', 14) ?></button></form><?php endif; ?>
+                            <?php if (can_manage()): ?><form method="post" style="display:inline" onsubmit="return abtConfirmForm(this, '「<?= h($a['service']) ?>」を削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_account"><input type="hidden" name="account_id" value="<?= (int) $a['id'] ?>"><button class="link danger" type="submit"><?= icon('trash', 14) ?></button></form><?php endif; ?>
                         </td>
                     </tr>
                 <?php endforeach; ?>
@@ -1710,7 +1710,7 @@ if ($route === 'myaccounts'):
                         <td class="hide-sm note-cell"><?= nl2br(h($a['notes'])) ?: '<span class="muted">—</span>' ?></td>
                         <td style="white-space:nowrap">
                             <button class="link" type="button" onclick='openAccount(<?= json_encode(["id"=>(int)$a["id"],"category"=>$a["category"],"service"=>$a["service"],"login_id"=>$a["login_id"],"url"=>$a["url"],"notes"=>$a["notes"],"secret_hint"=>$a["secret_hint"]], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
-                            <form method="post" style="display:inline" onsubmit="return confirm('「<?= h($a['service']) ?>」を削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_my_account"><input type="hidden" name="account_id" value="<?= (int) $a['id'] ?>"><button class="link danger" type="submit"><?= icon('trash', 14) ?></button></form>
+                            <form method="post" style="display:inline" onsubmit="return abtConfirmForm(this, '「<?= h($a['service']) ?>」を削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_my_account"><input type="hidden" name="account_id" value="<?= (int) $a['id'] ?>"><button class="link danger" type="submit"><?= icon('trash', 14) ?></button></form>
                         </td>
                     </tr>
                 <?php endforeach; ?>
@@ -1833,7 +1833,7 @@ if ($route === 'guide'):
                 <div style="margin-top:10px;display:flex;gap:6px">
                     <button class="link" type="button" onclick='openGuide(<?= json_encode(["ckey"=>$g["ckey"],"title"=>$g["title"],"needs"=>$g["needs"],"source"=>$g["source"],"url"=>$g["url"]], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
                     <?php if ($g['edited']): ?>
-                    <form method="post" style="display:inline" onsubmit="return confirm('「<?= h($g['title']) ?>」を<?= $g['custom'] ? '削除' : '既定に戻' ?>しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_guide"><input type="hidden" name="ckey" value="<?= h($g['ckey']) ?>"><button class="link danger" type="submit"><?= $g['custom'] ? '削除' : '既定に戻す' ?></button></form>
+                    <form method="post" style="display:inline" onsubmit="return abtConfirmForm(this, '「<?= h($g['title']) ?>」を<?= $g['custom'] ? '削除' : '既定に戻' ?>しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_guide"><input type="hidden" name="ckey" value="<?= h($g['ckey']) ?>"><button class="link danger" type="submit"><?= $g['custom'] ? '削除' : '既定に戻す' ?></button></form>
                     <?php endif; ?>
                 </div>
                 <?php endif; ?>
@@ -1921,7 +1921,7 @@ if ($route === 'manage'):
                     <td class="muted"><?= $cr['secret_hint'] ? h($cr['secret_hint']) : '<span style="color:#b42318">未保存</span>' ?></td>
                     <td style="white-space:nowrap">
                         <button class="link" type="button" onclick='openCred(<?= json_encode(["id"=>(int)$cr["id"],"name"=>$cr["name"],"cost_type"=>$cr["cost_type"],"cost_account"=>$cr["cost_account"],"openai_project_id"=>$cr["openai_project_id"],"secret_hint"=>$cr["secret_hint"]], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
-                        <?php if (can_manage()): ?><form method="post" style="display:inline" onsubmit="return confirm('キー「<?= h($cr['name']) ?>」を削除しますか？（このキーを使っている箱/プロダクトは未選択に戻ります）')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_credential"><input type="hidden" name="credential_id" value="<?= (int) $cr['id'] ?>"><button class="link danger" type="submit">削除</button></form><?php endif; ?>
+                        <?php if (can_manage()): ?><form method="post" style="display:inline" onsubmit="return abtConfirmForm(this, 'キー「<?= h($cr['name']) ?>」を削除しますか？（このキーを使っている箱/プロダクトは未選択に戻ります）')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_credential"><input type="hidden" name="credential_id" value="<?= (int) $cr['id'] ?>"><button class="link danger" type="submit">削除</button></form><?php endif; ?>
                     </td>
                 </tr>
             <?php endforeach; ?>
@@ -1954,7 +1954,7 @@ if ($route === 'manage'):
                         <?php endif; ?>
                         <button class="link" type="button" onclick='openSite(<?= (int)$p["id"] ?>, <?= json_encode($p["name"], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>＋サイト</button>
                         <button class="link" type="button" onclick='openProject(<?= json_encode(["id"=>(int)$p["id"],"name"=>$p["name"],"product"=>$p["product"] ?? "","cost_type"=>$p["cost_type"] ?? "","cost_account"=>$p["cost_account"] ?? "","openai_project_id"=>$p["openai_project_id"],"secret_hint"=>$p["secret_hint"],"monthly_cost"=>$p["monthly_cost"],"currency"=>$p["currency"],"credential_id"=>$p["credential_id"] ?? null], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
-                        <?php if (can_manage()): ?><form method="post" style="display:inline" onsubmit="return confirm('箱「<?= h($p['name']) ?>」を削除しますか？（URLは未割当へ）')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_project"><input type="hidden" name="project_id" value="<?= (int) $p['id'] ?>"><button class="link danger" type="submit">削除</button></form><?php endif; ?>
+                        <?php if (can_manage()): ?><form method="post" style="display:inline" onsubmit="return abtConfirmForm(this, '箱「<?= h($p['name']) ?>」を削除しますか？（URLは未割当へ）')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_project"><input type="hidden" name="project_id" value="<?= (int) $p['id'] ?>"><button class="link danger" type="submit">削除</button></form><?php endif; ?>
                     </td>
                 </tr>
             <?php endforeach; ?>
@@ -2033,11 +2033,11 @@ if ($route === 'product'):
         <h2 style="display:inline-flex;align-items:center;gap:10px"><?php if ($editable): ?><button type="button" class="badge-btn" onclick="openLogo()" title="アイコンを変更"><?= provider_badge($pname, 36, ($prodMeta[$pname]['logo_color'] ?? null), ($prodMeta[$pname]['logo_url'] ?? null)) ?><span class="badge-pen"><?= icon('gear', 12) ?></span></button><?php else: ?><?= provider_badge($pname, 36, ($prodMeta[$pname]['logo_color'] ?? null), ($prodMeta[$pname]['logo_url'] ?? null)) ?><?php endif; ?> <?= h($pname) ?><?php if ($pprovider): ?> <span class="muted" style="font-size:14px">（<?= h($pprovider) ?>）</span><?php endif; ?></h2>
         <span class="grow"></span>
         <?php if ($editable): ?>
-            <form method="post" style="display:inline" onsubmit="return confirm('「<?= h($pname) ?>」配下の箱のコストを今すぐ取得します。よろしいですか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="refresh_product"><input type="hidden" name="product" value="<?= h($pname) ?>"><button type="submit" class="btn"><?= icon('refresh', 15) ?> コスト更新</button></form>
+            <form method="post" style="display:inline" onsubmit="return abtConfirmForm(this, '「<?= h($pname) ?>」配下の箱のコストを今すぐ取得します。よろしいですか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="refresh_product"><input type="hidden" name="product" value="<?= h($pname) ?>"><button type="submit" class="btn"><?= icon('refresh', 15) ?> コスト更新</button></form>
             <button type="button" class="btn" onclick="openProject({product: <?= htmlspecialchars(json_encode($pname, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>})"><?= icon('plus', 15) ?> 箱を追加</button>
             <button type="button" class="primary" onclick="openCreate()"><?= icon('plus', 15) ?> API を追加</button>
             <?php if (can_manage()): ?>
-            <form method="post" style="display:inline" onsubmit="return confirm('プロダクト「<?= h($pname) ?>」を丸ごと削除します。\n配下の箱・このプロダクトのAPI/URL登録・コスト履歴・追加クレジットも削除されます。\n（他プロダクトのキーを含むURLは未割当に戻ります）\n\n本当に削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_product"><input type="hidden" name="product" value="<?= h($pname) ?>"><button type="submit" class="btn" style="color:#b42318;border-color:#f0c4bd"><?= icon('trash', 15) ?> プロダクト削除</button></form>
+            <form method="post" style="display:inline" onsubmit="return abtConfirmForm(this, 'プロダクト「<?= h($pname) ?>」を丸ごと削除します。\n配下の箱・このプロダクトのAPI/URL登録・コスト履歴・追加クレジットも削除されます。\n（他プロダクトのキーを含むURLは未割当に戻ります）\n\n本当に削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_product"><input type="hidden" name="product" value="<?= h($pname) ?>"><button type="submit" class="btn" style="color:#b42318;border-color:#f0c4bd"><?= icon('trash', 15) ?> プロダクト削除</button></form>
             <?php endif; ?>
         <?php endif; ?>
     </div>
@@ -2211,7 +2211,7 @@ if ($route === 'product'):
                     <td class="muted"><?= h(substr((string) $cp['created_at'], 0, 10)) ?></td>
                     <td class="cost"><?= h($cp['currency']) ?> <?= number_format((float) $cp['amount'], (fmod((float)$cp['amount'],1.0)===0.0)?0:2) ?><?= jpy_hint((float) $cp['amount'], $cp['currency']) ?></td>
                     <td><?= h($cp['note']) ?: '<span class="muted">—</span>' ?></td>
-                    <?php if ($editable): ?><td style="white-space:nowrap"><form method="post" style="display:inline" onsubmit="return confirm('この記録を削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_credit"><input type="hidden" name="id" value="<?= (int) $cp['id'] ?>"><button class="link danger" type="submit"><?= icon('trash', 15) ?></button></form></td><?php endif; ?>
+                    <?php if ($editable): ?><td style="white-space:nowrap"><form method="post" style="display:inline" onsubmit="return abtConfirmForm(this, 'この記録を削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_credit"><input type="hidden" name="id" value="<?= (int) $cp['id'] ?>"><button class="link danger" type="submit"><?= icon('trash', 15) ?></button></form></td><?php endif; ?>
                 </tr>
             <?php endforeach; ?>
             </tbody>
@@ -2247,7 +2247,7 @@ if ($route === 'product'):
                         <?php endif; ?>
                         <button class="link" type="button" onclick='openSite(<?= (int)$b["id"] ?>, <?= json_encode($b["name"], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>＋サイト</button>
                         <button class="link" type="button" onclick='openProject(<?= json_encode(["id"=>(int)$b["id"],"name"=>$b["name"],"product"=>$b["product"] ?? "","cost_type"=>$b["cost_type"] ?? "","cost_account"=>$b["cost_account"] ?? "","openai_project_id"=>$b["openai_project_id"],"secret_hint"=>$b["secret_hint"],"monthly_cost"=>$b["monthly_cost"],"currency"=>$b["currency"],"credential_id"=>$b["credential_id"] ?? null], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>編集</button>
-                        <form method="post" style="display:inline" onsubmit="return confirm('箱「<?= h($b['name']) ?>」を削除しますか？（URLは未割当に戻ります）')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_project"><input type="hidden" name="project_id" value="<?= (int) $b['id'] ?>"><button class="link danger" type="submit">削除</button></form>
+                        <form method="post" style="display:inline" onsubmit="return abtConfirmForm(this, '箱「<?= h($b['name']) ?>」を削除しますか？（URLは未割当に戻ります）')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_project"><input type="hidden" name="project_id" value="<?= (int) $b['id'] ?>"><button class="link danger" type="submit">削除</button></form>
                     </td>
                     <?php endif; ?>
                 </tr>
@@ -2271,7 +2271,7 @@ if ($route === 'product'):
                     <td style="padding-left:42px"><?= $f['is_key'] ? icon('key', 15) : icon('file', 15) ?> <code><?= h($f['file']) ?><?= $f['line'] !== null ? ':' . (int) $f['line'] : '' ?></code>
                         <button class="link" type="button" title="コピー" onclick="copyText(<?= htmlspecialchars(json_encode($pathStr, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)"><?= icon('copy', 15) ?></button></td>
                     <td></td>
-                    <td></td><?php if ($editable): ?><td class="hide-sm" style="white-space:nowrap"><form method="post" style="display:inline" onsubmit="return confirm('このURLを削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_usage"><input type="hidden" name="id" value="<?= (int) $f['id'] ?>"><button class="link danger" type="submit" title="URLを削除"><?= icon('trash', 15) ?></button></form></td><?php endif; ?>
+                    <td></td><?php if ($editable): ?><td class="hide-sm" style="white-space:nowrap"><form method="post" style="display:inline" onsubmit="return abtConfirmForm(this, 'このURLを削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_usage"><input type="hidden" name="id" value="<?= (int) $f['id'] ?>"><button class="link danger" type="submit" title="URLを削除"><?= icon('trash', 15) ?></button></form></td><?php endif; ?>
                 </tr>
                 <?php endforeach; ?>
                 <?php endforeach; ?>
@@ -2301,7 +2301,7 @@ if ($route === 'product'):
                     <td style="padding-left:42px"><?= $f['is_key'] ? icon('key', 15) : icon('file', 15) ?> <code><?= h($f['file']) ?><?= $f['line'] !== null ? ':' . (int) $f['line'] : '' ?></code>
                         <button class="link" type="button" title="コピー" onclick="copyText(<?= htmlspecialchars(json_encode($pathStr, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)"><?= icon('copy', 15) ?></button></td>
                     <td></td>
-                    <td></td><?php if ($editable): ?><td class="hide-sm" style="white-space:nowrap"><form method="post" style="display:inline" onsubmit="return confirm('このURLを削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_usage"><input type="hidden" name="id" value="<?= (int) $f['id'] ?>"><button class="link danger" type="submit" title="URLを削除"><?= icon('trash', 15) ?></button></form></td><?php endif; ?>
+                    <td></td><?php if ($editable): ?><td class="hide-sm" style="white-space:nowrap"><form method="post" style="display:inline" onsubmit="return abtConfirmForm(this, 'このURLを削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_usage"><input type="hidden" name="id" value="<?= (int) $f['id'] ?>"><button class="link danger" type="submit" title="URLを削除"><?= icon('trash', 15) ?></button></form></td><?php endif; ?>
                 </tr>
                 <?php endforeach; ?>
                 <?php endforeach; ?>
@@ -2351,15 +2351,14 @@ if ($route === 'product'):
     function openLogo() { const d = document.getElementById('logoDialog'); if (d) d.showModal(); }
     const DETAIL_CSRF = '<?= h($csrf) ?>';
     function renameSite(oldName) {
-        let nv = prompt('サイト名を変更します。\n（このグループ全体で「' + oldName + '」をまとめて変更します）', oldName);
-        if (nv === null) { return; }
-        nv = nv.trim();
-        if (nv === '' || nv === oldName) { return; }
-        const f = document.createElement('form');
-        f.method = 'post';
-        const add = (k, v) => { const i = document.createElement('input'); i.type = 'hidden'; i.name = k; i.value = v; f.appendChild(i); };
-        add('csrf', DETAIL_CSRF); add('action', 'rename_site'); add('old_site', oldName); add('new_site', nv);
-        document.body.appendChild(f); f.submit();
+        abtPrompt('サイト名を変更します。\n（このグループ全体で「' + oldName + '」をまとめて変更します）', oldName, function (nv) {
+            if (nv === oldName) { return; }
+            const f = document.createElement('form');
+            f.method = 'post';
+            const add = (k, v) => { const i = document.createElement('input'); i.type = 'hidden'; i.name = k; i.value = v; f.appendChild(i); };
+            add('csrf', DETAIL_CSRF); add('action', 'rename_site'); add('old_site', oldName); add('new_site', nv);
+            document.body.appendChild(f); f.submit();
+        });
     }
     function ddCountUpd() {
         const n = document.querySelectorAll('.dchk:checked').length;
@@ -2374,13 +2373,14 @@ if ($route === 'product'):
     document.addEventListener('change', e => { if (e.target && e.target.classList && e.target.classList.contains('dchk')) ddCountUpd(); });
     function doDeleteDetail() {
         const ids = [...document.querySelectorAll('.dchk:checked')].map(c => c.value);
-        if (!ids.length) { alert('削除するURLを☑で選択してください（箱を開くと表示されます。「全URL選択」も可）。'); return; }
-        if (!confirm('選択した ' + ids.length + ' 件のURLを削除します。取り消せません。よろしいですか？')) return;
-        const f = document.createElement('form'); f.method = 'post'; f.action = location.href;
-        const add = (k, v) => { const i = document.createElement('input'); i.type = 'hidden'; i.name = k; i.value = v; f.appendChild(i); };
-        add('csrf', DETAIL_CSRF); add('action', 'delete_usages');
-        ids.forEach(id => add('usage_ids[]', id));
-        document.body.appendChild(f); f.submit();
+        if (!ids.length) { abtAlert('削除するURLを☑で選択してください（箱を開くと表示されます。「全URL選択」も可）。'); return; }
+        abtConfirm('選択した ' + ids.length + ' 件のURLを削除します。取り消せません。よろしいですか？', function () {
+            const f = document.createElement('form'); f.method = 'post'; f.action = location.href;
+            const add = (k, v) => { const i = document.createElement('input'); i.type = 'hidden'; i.name = k; i.value = v; f.appendChild(i); };
+            add('csrf', DETAIL_CSRF); add('action', 'delete_usages');
+            ids.forEach(id => add('usage_ids[]', id));
+            document.body.appendChild(f); f.submit();
+        });
     }
 </script>
 </body></html>
@@ -2401,7 +2401,7 @@ if ($route === 'product'):
         <h2>ダッシュボード</h2>
         <span class="grow"></span>
         <?php if ($editable): ?>
-            <form method="post" style="display:inline" onsubmit="return confirm('全プロジェクト箱のコストを今すぐ取得します。よろしいですか？（数が多いと少し時間がかかります）')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="refresh_costs"><button type="submit" class="btn"><?= icon('refresh', 15) ?> コスト一括更新</button></form>
+            <form method="post" style="display:inline" onsubmit="return abtConfirmForm(this, '全プロジェクト箱のコストを今すぐ取得します。よろしいですか？（数が多いと少し時間がかかります）')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="refresh_costs"><button type="submit" class="btn"><?= icon('refresh', 15) ?> コスト一括更新</button></form>
             <button type="button" class="primary" onclick="openCreate()"><?= icon('plus', 15) ?> API を追加</button>
         <?php endif; ?>
         <?php if (count($memberships) > 1): ?>
@@ -2488,7 +2488,7 @@ if ($route === 'product'):
     <?php if ($legacyCount > 0 && can_manage()): ?>
         <div class="flash" style="background:#fff4e0;color:#92400e;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
             <span>旧形式（サイト未設定）のエントリが <strong><?= $legacyCount ?></strong> 件あります。<strong>まず再スキャンしてサイト別の新エントリを作ってから</strong>、古いものを削除して整理してください。<br><span class="hint">※削除すると、その旧エントリに手入力したコスト等も消えます。必要な値は新エントリへ移してから削除を。</span></span>
-            <form method="post" style="margin:0" onsubmit="return confirm('サイト未設定のエントリ <?= $legacyCount ?> 件を削除します（手入力した内容も消えます）。よろしいですか？')">
+            <form method="post" style="margin:0" onsubmit="return abtConfirmForm(this, 'サイト未設定のエントリ <?= $legacyCount ?> 件を削除します（手入力した内容も消えます）。よろしいですか？')">
                 <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
                 <input type="hidden" name="action" value="delete_legacy">
                 <button class="danger" type="submit">古いエントリを削除</button>
@@ -2677,7 +2677,7 @@ if ($route === 'product'):
                         <?php endif; ?>
                         <button class="link" type="button" onclick='openSite(<?= (int)$proj["id"] ?>, <?= json_encode($proj["name"], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>＋サイト</button>
                         <button class="link" type="button" onclick='openProject(<?= json_encode(["id"=>(int)$proj["id"],"name"=>$proj["name"],"product"=>$proj["product"],"cost_type"=>$proj["cost_type"] ?? "","cost_account"=>$proj["cost_account"] ?? "","openai_project_id"=>$proj["openai_project_id"],"secret_hint"=>$proj["secret_hint"],"monthly_cost"=>$proj["monthly_cost"],"currency"=>$proj["currency"],"credential_id"=>$proj["credential_id"] ?? null], JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE) ?>)'>箱を編集</button>
-                        <form method="post" style="display:inline" onsubmit="return confirm('箱「<?= h($proj['name']) ?>」を削除しますか？（URLは未割当に戻ります）')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_project"><input type="hidden" name="project_id" value="<?= (int) $proj['id'] ?>"><button class="link danger" type="submit">箱削除</button></form>
+                        <form method="post" style="display:inline" onsubmit="return abtConfirmForm(this, '箱「<?= h($proj['name']) ?>」を削除しますか？（URLは未割当に戻ります）')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_project"><input type="hidden" name="project_id" value="<?= (int) $proj['id'] ?>"><button class="link danger" type="submit">箱削除</button></form>
                     <?php endif; ?>
                 </td>
             </tr>
@@ -2703,7 +2703,7 @@ if ($route === 'product'):
                                     <?= $f['is_key'] ? icon('key', 14) : icon('file', 14) ?>
                                     <code><?= h($f['file']) ?><?= $f['line'] !== null ? ':' . (int) $f['line'] : '' ?></code>
                                     <button class="link" type="button" title="コピー" onclick="copyText(<?= htmlspecialchars(json_encode($pathStr, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)"><?= icon('copy', 14) ?></button>
-                                    <?php if ($editable): ?><form method="post" style="display:inline" onsubmit="return confirm('このURLを削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_usage"><input type="hidden" name="id" value="<?= (int) $f['id'] ?>"><button class="link danger" type="submit" title="URLを削除"><?= icon('trash', 14) ?></button></form><?php endif; ?>
+                                    <?php if ($editable): ?><form method="post" style="display:inline" onsubmit="return abtConfirmForm(this, 'このURLを削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_usage"><input type="hidden" name="id" value="<?= (int) $f['id'] ?>"><button class="link danger" type="submit" title="URLを削除"><?= icon('trash', 14) ?></button></form><?php endif; ?>
                                 </div>
                             <?php endforeach; ?>
                         </div>
@@ -2730,15 +2730,14 @@ if ($route === 'product'):
     // ---- ドラッグ＆ドロップ並べ替え（PC、リロードなし） ----
     const ABT_CSRF = '<?= h($csrf) ?>';
     function renameSite(oldName) {
-        let nv = prompt('サイト名を変更します。\n（このグループ全体で「' + oldName + '」をまとめて変更します）', oldName);
-        if (nv === null) { return; }
-        nv = nv.trim();
-        if (nv === '' || nv === oldName) { return; }
-        const f = document.createElement('form');
-        f.method = 'post';
-        const add = (k, v) => { const i = document.createElement('input'); i.type = 'hidden'; i.name = k; i.value = v; f.appendChild(i); };
-        add('csrf', ABT_CSRF); add('action', 'rename_site'); add('old_site', oldName); add('new_site', nv);
-        document.body.appendChild(f); f.submit();
+        abtPrompt('サイト名を変更します。\n（このグループ全体で「' + oldName + '」をまとめて変更します）', oldName, function (nv) {
+            if (nv === oldName) { return; }
+            const f = document.createElement('form');
+            f.method = 'post';
+            const add = (k, v) => { const i = document.createElement('input'); i.type = 'hidden'; i.name = k; i.value = v; f.appendChild(i); };
+            add('csrf', ABT_CSRF); add('action', 'rename_site'); add('old_site', oldName); add('new_site', nv);
+            document.body.appendChild(f); f.submit();
+        });
     }
     let abtDrag = null;
     function gDragStart(e, el) { abtDrag = el; e.dataTransfer.effectAllowed = 'move'; el.classList.add('dragging'); }
@@ -2813,7 +2812,7 @@ if ($route === 'product'):
     function doMove() {
         const uids = [...document.querySelectorAll('.moveChk:checked')].map(c => c.value);
         const sites = [...document.querySelectorAll('.siteChk:checked')].map(c => c.value);
-        if (!uids.length && !sites.length) { alert('移動するURLまたはサイトを☑で選択してください。'); return; }
+        if (!uids.length && !sites.length) { abtAlert('移動するURLまたはサイトを☑で選択してください。'); return; }
         const sel = document.getElementById('moveTargetSel').value;
         let label = '未割当';
         const f = document.createElement('form'); f.method = 'post'; f.action = 'index.php';
@@ -2821,27 +2820,29 @@ if ($route === 'product'):
         add('csrf', ABT_CSRF); add('action', 'move_to_project');
         if (sel === 'new') {
             const nm = document.getElementById('moveNewName').value.trim();
-            if (!nm) { alert('新しい箱の名前を入れてください。'); return; }
+            if (!nm) { abtAlert('新しい箱の名前を入れてください。'); return; }
             add('new_name', nm); add('new_proj', document.getElementById('moveNewProj').value.trim());
             label = '新しい箱「' + nm + '」';
         } else if (sel !== 'unassign') {
             add('target_project', sel);
             label = '選択した箱';
         }
-        if (!confirm('URL ' + uids.length + ' 件 / サイト ' + sites.length + ' 件を ' + label + ' へ移動します。よろしいですか？')) return;
-        uids.forEach(id => add('usage_ids[]', id));
-        sites.forEach(s => add('sites[]', s));
-        document.body.appendChild(f); f.submit();
+        abtConfirm('URL ' + uids.length + ' 件 / サイト ' + sites.length + ' 件を ' + label + ' へ移動します。よろしいですか？', function () {
+            uids.forEach(id => add('usage_ids[]', id));
+            sites.forEach(s => add('sites[]', s));
+            document.body.appendChild(f); f.submit();
+        }, { danger: false });
     }
     function doDeleteSelected() {
         const uids = [...document.querySelectorAll('.moveChk:checked')].map(c => c.value);
-        if (!uids.length) { alert('削除するURLを☑で選択してください（「表示中の全URL選択」も使えます）。'); return; }
-        if (!confirm('選択した ' + uids.length + ' 件のURLを削除します。取り消せません。よろしいですか？')) return;
-        const f = document.createElement('form'); f.method = 'post'; f.action = 'index.php';
-        const add = (k, v) => { const i = document.createElement('input'); i.type = 'hidden'; i.name = k; i.value = v; f.appendChild(i); };
-        add('csrf', ABT_CSRF); add('action', 'delete_usages');
-        uids.forEach(id => add('usage_ids[]', id));
-        document.body.appendChild(f); f.submit();
+        if (!uids.length) { abtAlert('削除するURLを☑で選択してください（「表示中の全URL選択」も使えます）。'); return; }
+        abtConfirm('選択した ' + uids.length + ' 件のURLを削除します。取り消せません。よろしいですか？', function () {
+            const f = document.createElement('form'); f.method = 'post'; f.action = 'index.php';
+            const add = (k, v) => { const i = document.createElement('input'); i.type = 'hidden'; i.name = k; i.value = v; f.appendChild(i); };
+            add('csrf', ABT_CSRF); add('action', 'delete_usages');
+            uids.forEach(id => add('usage_ids[]', id));
+            document.body.appendChild(f); f.submit();
+        });
     }
 
     // プロダクト展開 → プロジェクト行を表示（閉じる時はファイルも畳む）

@@ -574,6 +574,61 @@ function render_styles(): void { ?>
         .table-wrap table{min-width:520px;}
     }
 </style>
+<script>
+/* 共通モーダル（ブラウザ標準の confirm/prompt/alert の置き換え）。全ページで利用可。 */
+(function () {
+    if (window.abtConfirm) { return; }
+    function build() {
+        var dlg = document.createElement('dialog');
+        dlg.id = '__abtModal';
+        dlg.style.maxWidth = '440px';
+        dlg.innerHTML =
+            '<div class="modal-head" data-h>確認</div>' +
+            '<div class="modal-body"><div data-msg style="white-space:pre-wrap;line-height:1.6"></div>' +
+            '<input type="text" data-inp style="display:none;margin-top:12px;width:100%">' +
+            '<datalist data-list></datalist></div>' +
+            '<div class="modal-foot"><button type="button" data-cancel>キャンセル</button>' +
+            '<button type="button" class="primary" data-ok>OK</button></div>';
+        document.body.appendChild(dlg);
+        return dlg;
+    }
+    function modal(o) {
+        var dlg = document.getElementById('__abtModal') || build();
+        dlg.querySelector('[data-h]').textContent = o.title || '確認';
+        dlg.querySelector('[data-msg]').textContent = o.message || '';
+        var inp = dlg.querySelector('[data-inp]');
+        if (o.prompt) { inp.style.display = ''; inp.value = o.def || ''; } else { inp.style.display = 'none'; }
+        var ok = dlg.querySelector('[data-ok]'), cancel = dlg.querySelector('[data-cancel]');
+        ok.textContent = o.okText || 'OK';
+        ok.className = o.danger ? 'danger' : 'primary';
+        cancel.style.display = o.alert ? 'none' : '';
+        function done() { ok.onclick = null; cancel.onclick = null; inp.onkeydown = null; }
+        ok.onclick = function () { var v = o.prompt ? inp.value : true; done(); dlg.close(); if (o.onOk) { o.onOk(v); } };
+        cancel.onclick = function () { done(); dlg.close(); };
+        inp.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); ok.click(); } };
+        dlg.showModal();
+        if (o.prompt) { inp.focus(); inp.select(); }
+    }
+    window.abtConfirm = function (message, onOk, opts) {
+        opts = opts || {};
+        modal({ message: message, onOk: onOk, title: opts.title || '確認', okText: opts.okText, danger: opts.danger !== false });
+    };
+    window.abtPrompt = function (message, def, onOk, opts) {
+        opts = opts || {};
+        modal({ message: message, prompt: true, def: def, title: opts.title || '入力', danger: false,
+            onOk: function (v) { v = (v || '').trim(); if (v !== '') { onOk(v); } } });
+    };
+    window.abtAlert = function (message, opts) {
+        opts = opts || {};
+        modal({ message: message, alert: true, danger: false, title: opts.title || 'お知らせ', okText: '閉じる' });
+    };
+    /* インラインフォーム用: onsubmit="return abtConfirmForm(this,'メッセージ')" */
+    window.abtConfirmForm = function (form, message, opts) {
+        abtConfirm(message, function () { form.submit(); }, opts);
+        return false;
+    };
+})();
+</script>
 <?php }
 
 /** 共通サイドバー（全ページ共用）。$active: dashboard/scan/tokens/manage/guide/groups */

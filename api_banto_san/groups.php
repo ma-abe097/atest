@@ -312,7 +312,7 @@ function gstyles(): void { ?>
                                 <?php if ($canManage): ?>
                                 <td>
                                     <?php if (!is_last_owner($viewGid, (int) $mem['id'])): ?>
-                                        <form method="post" onsubmit="return confirm('<?= h($mem['name'] ?: $mem['email']) ?> をグループから削除しますか？')">
+                                        <form method="post" onsubmit="return abtConfirmForm(this, '<?= h($mem['name'] ?: $mem['email']) ?> をグループから削除しますか？')">
                                             <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
                                             <input type="hidden" name="action" value="remove_member">
                                             <input type="hidden" name="gid" value="<?= $viewGid ?>">
@@ -376,7 +376,7 @@ function gstyles(): void { ?>
                 <div class="card" style="border-color:#f3c4c0">
                     <h2 style="color:var(--err-ink)">グループの削除</h2>
                     <p class="hint">グループ・メンバーシップ・APIカタログがすべて削除されます。元に戻せません。</p>
-                    <form method="post" onsubmit="return confirm('本当に「<?= h($viewGroup['name']) ?>」を削除しますか？元に戻せません。')">
+                    <form method="post" onsubmit="return abtConfirmForm(this, '本当に「<?= h($viewGroup['name']) ?>」を削除しますか？元に戻せません。')">
                         <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
                         <input type="hidden" name="action" value="delete_group">
                         <input type="hidden" name="gid" value="<?= $viewGid ?>">
