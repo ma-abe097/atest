@@ -28,4 +28,8 @@ return [
     'GOOGLE_CLIENT_SECRET'  => '',
     'ALLOWED_EMAIL_DOMAINS' => 'sk-t.com',  // 複数可（カンマ/スペース区切り）。空なら全ドメイン許可
     // 'GOOGLE_REDIRECT_URI' => '',     // 通常は未設定でOK（自動で oauth.php を使用）
+
+    // 管理者にするメール（カンマ/スペース区切り）。a.yasugi@sk-t.com は既定で管理者。
+    // ここに追記した人もGoogleログイン時に管理者になる。
+    'ADMIN_EMAILS' => '',
 ];

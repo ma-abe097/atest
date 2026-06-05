@@ -282,6 +282,25 @@ function mdb_email_allowed(string $email): bool
     return $at !== false && in_array(strtolower(substr($email, $at + 1)), $allowed, true);
 }
 
+/** 管理者にするメールの一覧（既定 ＋ config の ADMIN_EMAILS）。小文字で返す。 */
+function mdb_admin_emails(): array
+{
+    $list = ['a.yasugi@sk-t.com'];   // 既定の管理者
+    $raw  = trim((string) mdb_config('ADMIN_EMAILS', ''));
+    if ($raw !== '') {
+        foreach (preg_split('/[\s,]+/', $raw, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $e) {
+            $list[] = $e;
+        }
+    }
+    return array_values(array_unique(array_map('strtolower', $list)));
+}
+
+/** そのメールは管理者扱いか */
+function mdb_is_admin_email(string $email): bool
+{
+    return in_array(strtolower(trim($email)), mdb_admin_emails(), true);
+}
+
 /** 簡易HTTP（curl優先）。戻り値: ['status'=>int,'body'=>string,'error'=>string] */
 function mdb_http(string $method, string $url, array $headers = [], ?string $body = null): array
 {
@@ -390,6 +409,7 @@ function login_with_google(array $info): array
     foreach ($data['users'] as $i => $u) {
         if (strtolower((string) ($u['email'] ?? '')) === $email) { $idx = $i; break; }
     }
+    $isAdmin = mdb_is_admin_email($email);
     if ($idx === null) {
         $user = [
             'id'      => 'u' . time() . random_int(100, 999),
@@ -398,15 +418,26 @@ function login_with_google(array $info): array
             'password' => '',          // Googleログイン専用（パスワードなし）
             'email'   => $email,
             'auth'    => 'google',
+            'role'    => $isAdmin ? 'admin' : 'member',
         ];
         $data['users'][] = $user;
         save_data($data);
     } else {
         $user = $data['users'][$idx];
+        $changed = false;
         // 表示名が空なら補完
         if (($user['name'] ?? '') === '' && $info['name'] !== '') {
             $data['users'][$idx]['name'] = $info['name'];
             $user['name'] = $info['name'];
+            $changed = true;
+        }
+        // 管理者メールなら管理者へ昇格（既に管理者ならそのまま）
+        if ($isAdmin && ($user['role'] ?? '') !== 'admin') {
+            $data['users'][$idx]['role'] = 'admin';
+            $user['role'] = 'admin';
+            $changed = true;
+        }
+        if ($changed) {
             save_data($data);
         }
     }
