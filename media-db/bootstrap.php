@@ -221,6 +221,7 @@ function do_logout(): void
 function nav_items(): array
 {
     return [
+        'home'        => ['ホーム',                'home',             'index.php'],
         'register'    => ['データ登録・読込',      'database-zap',     'register.php'],
         'dashboard'   => ['受注一覧・ランキング',  'layout-dashboard', 'dashboard.php'],
         'flag-search' => ['フラグ(媒体)別検索',    'filter',           'flag-search.php'],
