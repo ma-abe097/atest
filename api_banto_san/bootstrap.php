@@ -351,6 +351,11 @@ function render_styles(): void { ?>
     .hero-amount .cur { font-size:18px; font-weight:700; opacity:.85; margin-right:4px; }
     .hero-amount.muted { color:#cfd6e6; }
     .jpyhint { font-size:.5em; font-weight:400; opacity:.7; margin-left:2px; white-space:nowrap; }
+    /* ヒーローの残高表示（Twilio/DataForSEO 等の残高を大きく見せる） */
+    .hero-balance { margin-top:12px; font-size:20px; font-weight:800; color:var(--accent-d); font-variant-numeric:tabular-nums; }
+    .hero-balance .lbl { display:block; font-size:11.5px; font-weight:700; letter-spacing:.04em; color:var(--muted); margin-bottom:1px; }
+    .hero-balance .cur { font-size:13px; font-weight:700; opacity:.85; margin-right:3px; }
+    .hero-balance .sep { color:var(--line); margin:0 8px; font-weight:400; }
     /* カテゴリ切替タブ（シンプルなピル型） */
     .noren-tabs { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px; }
     .noren-tab { border:1px solid var(--line); cursor:pointer; background:var(--card); color:var(--muted); font-weight:700; font-size:13px;
