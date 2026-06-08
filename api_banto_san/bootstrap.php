@@ -356,7 +356,7 @@ function render_styles(): void { ?>
     .hero-balance .lbl { display:block; font-size:11.5px; font-weight:700; letter-spacing:.04em; color:#fff; opacity:.9; margin-bottom:2px; text-shadow:none; }
     .hero-balance .cur { font-size:13px; font-weight:700; opacity:.9; margin-right:3px; }
     .hero-balance .sep { color:rgba(255,255,255,.45); margin:0 8px; font-weight:400; }
-    /* プロダクト詳細：箱→サイト→URL（ページ）の入れ子表示 */
+    /* プロダクト詳細：箱→サイト→ファイル（使用箇所）の入れ子表示 */
     .site-group { margin:7px 0 9px; }
     .site-head { font-size:13px; color:var(--ink); display:flex; align-items:center; gap:5px; }
     .site-head .sc { color:var(--accent); }
