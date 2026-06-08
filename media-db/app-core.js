@@ -22,6 +22,22 @@
         syncError: false,
     });
 
+    // ===== ドメイン妥当性チェック（「…」等のゴミURLを除外） =====
+    function isValidDomain(d) {
+        if (typeof d !== 'string') return false;
+        d = d.trim().toLowerCase();
+        if (!d || d.length > 253) return false;
+        // ASCIIの英数字・ハイフン＋正しいTLD（…・全角・空文字は不可）
+        return /^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/.test(d);
+    }
+
+    // 既存データに紛れた不正ドメイン（…等）は表示しない。watch登録前なので保存はされない。
+    store.clients.forEach(c => {
+        if (Array.isArray(c.foundMedia)) {
+            c.foundMedia = c.foundMedia.filter(m => m && isValidDomain(m.domain));
+        }
+    });
+
     // ===== サーバ保存（api.php へ POST） =====
     let saveTimer = null;
 
@@ -152,7 +168,7 @@
     function foundDomainsRanking(clients) {
         const counts = {};
         clients.forEach(c => {
-            const domains = new Set((c.foundMedia || []).map(m => m.domain).filter(Boolean));
+            const domains = new Set((c.foundMedia || []).map(m => m.domain).filter(isValidDomain));
             domains.forEach(d => { counts[d] = (counts[d] || 0) + 1; });
         });
         return Object.entries(counts)
@@ -164,7 +180,7 @@
     watch(() => [store.isSyncing, store.syncError], () => nextTick(refreshIcons));
 
     // ===== 公開 =====
-    window.AppCore = { store, isAdmin: IS_ADMIN, save, getMediaDetails, calculateRanking, exportClientsCSV, refreshIcons, searchClientMedia, foundDomainsRanking, fetchMonthlyCost };
+    window.AppCore = { store, isAdmin: IS_ADMIN, save, getMediaDetails, calculateRanking, exportClientsCSV, refreshIcons, searchClientMedia, foundDomainsRanking, fetchMonthlyCost, isValidDomain };
 })();
 
 

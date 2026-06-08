@@ -66,7 +66,7 @@ require __DIR__ . '/layout_top.php';
                             <i data-lucide="trash-2" class="w-4 h-4"></i>
                         </button>
                         <div class="flex justify-between items-start mb-2 pr-8">
-                            <h4 class="font-bold text-gray-900">{{ client.name }}</h4>
+                            <h4 @click="openDetail(client)" class="font-bold text-gray-900 cursor-pointer hover:text-blue-700 hover:underline" title="詳細を見る">{{ client.name }}</h4>
                             <span class="text-xs text-gray-500">{{ client.industry }}</span>
                         </div>
                         <div class="text-sm text-gray-600 mb-1">受注日: <span class="font-bold text-gray-800">{{ client.orderDate }}</span></div>
@@ -81,6 +81,10 @@ require __DIR__ . '/layout_top.php';
 
                         <div class="mt-3 pt-3 border-t border-gray-200">
                             <div class="flex flex-wrap items-center gap-2">
+                                <button @click="openDetail(client)"
+                                        class="inline-flex items-center gap-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-md px-3 py-1.5 shadow-sm hover:bg-gray-50">
+                                    <i data-lucide="eye" class="w-4 h-4"></i> 詳細
+                                </button>
                                 <?php if ($canSearch): ?>
                                 <button @click="searchOtherMedia(client)" :disabled="searchingId === client.id"
                                         class="inline-flex items-center gap-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md px-3 py-1.5 shadow-sm disabled:opacity-50">
@@ -148,6 +152,65 @@ require __DIR__ . '/layout_top.php';
                         </tr>
                     </tbody>
                 </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 顧客詳細モーダル -->
+<div v-if="selectedClient" @click.self="closeDetail"
+     class="fixed inset-0 z-50 bg-gray-900/60 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[88vh] overflow-y-auto">
+        <!-- ヘッダー -->
+        <div class="flex items-start justify-between gap-3 p-6 border-b border-gray-200 sticky top-0 bg-white rounded-t-2xl">
+            <div>
+                <h3 class="text-xl font-bold text-gray-900">{{ selectedClient.name }}</h3>
+                <p class="text-sm text-gray-500 mt-0.5">{{ selectedClient.industry }}</p>
+            </div>
+            <button @click="closeDetail" class="text-gray-400 hover:text-gray-700 hover:bg-gray-100 p-1.5 rounded-lg shrink-0" title="閉じる">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+        <!-- 本文 -->
+        <div class="p-6 space-y-5">
+            <!-- 基本情報 -->
+            <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                <div class="flex gap-2"><dt class="text-gray-500 shrink-0 w-20">受注日</dt><dd class="font-medium text-gray-800">{{ selectedClient.orderDate }}</dd></div>
+                <div class="flex gap-2"><dt class="text-gray-500 shrink-0 w-20">最終検索</dt><dd class="text-gray-800">{{ selectedClient.searchedAt || '未検索' }}</dd></div>
+                <div class="flex gap-2 sm:col-span-2"><dt class="text-gray-500 shrink-0 w-20">住所</dt><dd class="text-gray-800">{{ selectedClient.address || '—' }}</dd></div>
+                <div class="flex items-center gap-2 sm:col-span-2"><dt class="text-gray-500 shrink-0 w-20">受注リスト元</dt>
+                    <dd>
+                        <span v-if="sourceMedia(selectedClient)" class="inline-flex items-center text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded">{{ sourceMedia(selectedClient).name }}</span>
+                        <span v-else class="text-gray-400">未設定</span>
+                    </dd>
+                </div>
+            </dl>
+
+            <!-- 他媒体 -->
+            <div class="border-t border-gray-200 pt-4">
+                <div class="flex items-center justify-between gap-2 mb-3">
+                    <h4 class="font-bold text-gray-800">他に利用している媒体 <span class="text-blue-600">{{ detailMedia.length }}</span> 件</h4>
+                    <?php if ($canSearch): ?>
+                    <button @click="searchOtherMedia(selectedClient)" :disabled="searchingId === selectedClient.id"
+                            class="inline-flex items-center gap-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md px-3 py-1.5 shadow-sm disabled:opacity-50">
+                        <i :data-lucide="searchingId === selectedClient.id ? 'loader' : 'refresh-cw'" :class="['w-3.5 h-3.5', searchingId === selectedClient.id ? 'sync-spin' : '']"></i>
+                        {{ searchingId === selectedClient.id ? '検索中…' : '再検索' }}
+                    </button>
+                    <?php endif; ?>
+                </div>
+                <ul v-if="detailMedia.length" class="space-y-2">
+                    <li v-for="(m, i) in detailMedia" :key="i" class="flex items-start gap-2 text-sm border border-gray-100 rounded-lg p-2.5 hover:bg-gray-50">
+                        <span class="text-gray-400 shrink-0 w-5 text-right">{{ i + 1 }}</span>
+                        <div class="min-w-0">
+                            <a :href="m.url" target="_blank" rel="noopener" class="text-blue-600 hover:underline break-words">{{ m.title || m.url }}</a>
+                            <span class="block text-xs text-gray-400 break-all">{{ m.domain }}</span>
+                        </div>
+                    </li>
+                </ul>
+                <div v-else class="text-sm text-gray-500 bg-gray-50 border border-gray-100 rounded-lg p-4 text-center">
+                    まだ媒体が見つかっていません。
+                    <span v-if="selectedClient.searchNote" class="block mt-1 text-gray-400 text-xs">AIの回答: {{ selectedClient.searchNote }}</span>
+                </div>
             </div>
         </div>
     </div>

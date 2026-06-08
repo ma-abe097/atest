@@ -5,7 +5,7 @@
  */
 (function () {
     const { createApp, ref, computed, onMounted, watch, nextTick } = Vue;
-    const { store, exportClientsCSV, refreshIcons, searchClientMedia, foundDomainsRanking } = AppCore;
+    const { store, exportClientsCSV, refreshIcons, searchClientMedia, foundDomainsRanking, isValidDomain } = AppCore;
 
     createApp({
         setup() {
@@ -89,6 +89,18 @@
             // 当月のAPI使用額
             const monthlyCost = ref(null);
 
+            // ===== 顧客の詳細モーダル =====
+            const selectedClient = ref(null);
+            const openDetail  = (client) => { selectedClient.value = client; nextTick(refreshIcons); };
+            const closeDetail = () => { selectedClient.value = null; };
+            // モーダルに出す媒体（不正ドメインは除外）
+            const detailMedia = computed(() => {
+                const c = selectedClient.value;
+                if (!c || !Array.isArray(c.foundMedia)) return [];
+                return c.foundMedia.filter(m => m && isValidDomain(m.domain));
+            });
+            watch(selectedClient, () => nextTick(refreshIcons));
+
             const exportCsv = () => {
                 const label = (dateRangeText.value || '全期間').replace(/ /g, '');
                 exportClientsCSV(filteredClientsByDate.value, `受注リスト_${label}.csv`);
@@ -108,6 +120,7 @@
                 filteredClientsByDate, dateRangeText,
                 deleteClient, exportCsv, sourceMedia,
                 searchOtherMedia, searchAllPending, searchingId, foundRanking,
+                selectedClient, openDetail, closeDetail, detailMedia,
             };
         }
     }).mount('#app');

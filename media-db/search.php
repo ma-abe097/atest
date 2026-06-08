@@ -68,11 +68,11 @@ if ($name === '') {
 
 // プロンプト：必ずウェブ検索し、見つかったURLを本文にも列挙させる（取りこぼし防止）
 $prompt = "あなたは企業の掲載先を調べる調査アシスタントです。"
-        . "必ずウェブ検索ツールを使って、次の会社が掲載・登録されているウェブページ"
+        . "必ずウェブ検索ツールを使って、次の会社が掲載・登録されている実在のウェブページ"
         . "（公式サイト、ポータル/媒体サイト、SNS、口コミ、地図、求人サイト等）を調べてください。\n"
         . "会社名: {$name}\n住所: {$address}\n"
-        . "同じ会社だと確信できるページについて、見つかったURLを本文に1行ずつ、"
-        . "短縮せず完全な形（https://… ）で列挙してください。出典(引用)も付けてください。";
+        . "同じ会社だと確信できるページについて、実際にアクセスできる完全なURL（http から始まる形）を本文に1行ずつ列挙してください。"
+        . "存在しないURL・例示・省略形（…）は書かないでください。出典(引用)も必ず付けてください。";
 
 // OpenAI Responses API 呼び出し（まず検索を強制。弾かれたら強制なしで再試行）
 $callOpenAI = function (bool $force) use ($apiKey, $model, $prompt): array {
@@ -174,20 +174,40 @@ function extract_found_media($node): array
     };
     $walk($node);
 
-    $noise = ['openai.com', 'bing.com', 'google.com', 'www.google.com', 'duckduckgo.com', 'vertexaisearch.cloud.google.com'];
+    $noise = ['openai.com', 'bing.com', 'www.bing.com', 'google.com', 'www.google.com', 'duckduckgo.com', 'search.brave.com', 'vertexaisearch.cloud.google.com'];
     $found = [];
     foreach ($urls as $u) {
         $host = parse_url($u, PHP_URL_HOST);
         if (!$host) {
             continue;
         }
-        $host = preg_replace('#^www\.#i', '', strtolower($host));
-        if (in_array($host, $noise, true)) {
+        $host = preg_replace('#^www\.#i', '', strtolower((string) $host));
+        $host = preg_replace('/[^a-z0-9.\-].*$/', '', $host);  // 末尾のゴミ（…等）以降を切り捨て
+        $host = trim($host, '.');
+        if ($host === '' || in_array($host, $noise, true)) {
             continue;
         }
-        $found[] = ['url' => $u, 'domain' => $host, 'title' => ($titles[$u] ?? '')];
+        if (!mdb_valid_domain($host)) {     // 「…」などURLでないものを除外
+            continue;
+        }
+        // URL自体が非ASCIIで壊れている場合は、ドメインだけの安全なURLに置き換える
+        $cleanUrl = preg_match('/^[\x21-\x7e]+$/', $u) ? $u : ('https://' . $host);
+        $found[] = ['url' => $cleanUrl, 'domain' => $host, 'title' => ($titles[$u] ?? '')];
     }
     return $found;
+}
+
+/** ドメインが実在しうる形式か（ASCIIのみ・正しいTLD）を厳密に判定。「…」等のゴミを弾く。 */
+function mdb_valid_domain(string $host): bool
+{
+    $host = strtolower(trim($host));
+    if ($host === '' || strlen($host) > 253) {
+        return false;
+    }
+    if (!preg_match('/^[\x21-\x7e]+$/', $host)) {   // 表示可能ASCII以外（…・全角等）は不可
+        return false;
+    }
+    return (bool) preg_match('/^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$/', $host);
 }
 
 /** APIレスポンスからAIの本文テキストを取り出す（0件時の原因確認・表示用） */
