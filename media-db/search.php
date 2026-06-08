@@ -150,14 +150,17 @@ search_out(200, [
  */
 function extract_found_media($node): array
 {
-    $urls = [];
+    // 引用(url_citation等の構造化URL＝検索が実際に見つけた実在ページ)と、
+    // 本文テキスト中のURL(AIが書き出すため、存在しないページが混ざりやすい)を分けて集める。
+    $cite   = [];   // 構造化URL（実在ページ）
+    $text   = [];   // 本文テキスト中のURL
     $titles = [];
-    $walk = function ($n) use (&$walk, &$urls, &$titles) {
+    $walk = function ($n) use (&$walk, &$cite, &$text, &$titles) {
         if (!is_array($n)) {
             return;
         }
         if (isset($n['url']) && is_string($n['url']) && preg_match('#^https?://#i', $n['url'])) {
-            $urls[$n['url']] = $n['url'];
+            $cite[$n['url']] = $n['url'];
             if (!empty($n['title']) && is_string($n['title'])) {
                 $titles[$n['url']] = $n['title'];
             }
@@ -167,7 +170,7 @@ function extract_found_media($node): array
                 if (preg_match_all('#https?://[^\s)"\'<>\]]+#', $v, $m)) {
                     foreach ($m[0] as $u) {
                         $u = rtrim($u, '.,);');
-                        $urls[$u] = $u;
+                        $text[$u] = $u;
                     }
                 }
             } elseif (is_array($v)) {
@@ -176,6 +179,9 @@ function extract_found_media($node): array
         }
     };
     $walk($node);
+
+    // 実在ページ(引用)を優先。引用が無いときだけ本文URLを使う（存在しないページの混入を防ぐ）。
+    $urls = $cite !== [] ? $cite : $text;
 
     $noise = ['openai.com', 'bing.com', 'www.bing.com', 'google.com', 'www.google.com', 'duckduckgo.com', 'search.brave.com', 'vertexaisearch.cloud.google.com'];
     $found = [];
@@ -214,9 +220,10 @@ function mdb_valid_domain(string $host): bool
 }
 
 /**
- * 到達可能なURLだけに絞る（リンク切れ等を除外）。curl_multi で並列に確認する。
- * - 「あり」とみなす: 2xx/3xx、または存在するがブロック/制限される 401/403/405/429
+ * 到達可能なURLだけに絞る（リンク切れ・存在しないページを除外）。curl_multi で並列確認。
  * - 除外: 接続不可/DNS失敗(0)・404・410・5xx
+ * - 200番台でも本文が「ページが見つかりません/404」等（ソフト404）なら除外
+ * - 「あり」とみなす: 2xx/3xx（内容OK）、または存在するがブロック/制限される 401/403/405/429
  * - 全滅した場合は誤検知の可能性があるため、元のリストをそのまま返す
  */
 function filter_reachable(array $found): array
@@ -224,21 +231,28 @@ function filter_reachable(array $found): array
     if (count($found) === 0) {
         return $found;
     }
-    $found = array_slice($found, 0, 30);   // 多すぎる場合の上限（時間対策）
+    $found  = array_slice($found, 0, 30);   // 多すぎる場合の上限（時間対策）
+    $cap    = 120000;                        // 本文の取得上限（タイトル判定に十分・約120KB）
+    $bodies = [];
     $mh = curl_multi_init();
     $handles = [];
     foreach ($found as $i => $m) {
+        $bodies[$i] = '';
         $ch = curl_init($m['url']);
         curl_setopt_array($ch, [
-            CURLOPT_NOBODY         => true,    // HEADで軽く確認
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_MAXREDIRS      => 4,
-            CURLOPT_TIMEOUT        => 7,
+            CURLOPT_TIMEOUT        => 8,
             CURLOPT_CONNECTTIMEOUT => 5,
             CURLOPT_SSL_VERIFYPEER => false,   // 到達確認のみのため緩める
             CURLOPT_SSL_VERIFYHOST => false,
             CURLOPT_USERAGENT      => 'Mozilla/5.0 (compatible; MediaDB/1.0)',
-            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_WRITEFUNCTION  => function ($c, $data) use (&$bodies, $i, $cap) {
+                if (strlen($bodies[$i]) < $cap) {
+                    $bodies[$i] .= $data;
+                }
+                return strlen($bodies[$i]) >= $cap ? 0 : strlen($data);   // 上限到達で打ち切り
+            },
         ]);
         curl_multi_add_handle($mh, $ch);
         $handles[$i] = $ch;
@@ -256,13 +270,45 @@ function filter_reachable(array $found): array
         $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_multi_remove_handle($mh, $ch);
         curl_close($ch);
-        $ok = ($code >= 200 && $code < 400) || in_array($code, [401, 403, 405, 429], true);
-        if ($ok) {
-            $kept[] = $found[$i];
+        // 到達OK: 2xx/3xx、または存在するがブロック/制限される 401/403/405/429
+        $statusOk = ($code >= 200 && $code < 400) || in_array($code, [401, 403, 405, 429], true);
+        if (!$statusOk) {
+            continue;   // 404・410・5xx・接続不可 は除外
         }
+        // 200番台でも、内容が「ページが見つかりません」等ならソフト404として除外
+        if ($code >= 200 && $code < 300 && looks_not_found($bodies[$i] ?? '')) {
+            continue;
+        }
+        $kept[] = $found[$i];
     }
     curl_multi_close($mh);
     return $kept !== [] ? $kept : $found;   // 全滅時は誤検知回避で元を返す
+}
+
+/** ページ本文(HTML)の<title>が「見つかりません/404」等ならtrue（ソフト404検出） */
+function looks_not_found(string $body): bool
+{
+    if ($body === '') {
+        return false;   // 取得できなければ判定しない（むやみに除外しない）
+    }
+    $enc = mb_detect_encoding($body, ['UTF-8', 'SJIS-win', 'EUC-JP', 'ISO-2022-JP'], true) ?: 'UTF-8';
+    if ($enc !== 'UTF-8') {
+        $body = (string) @mb_convert_encoding($body, 'UTF-8', $enc);
+    }
+    if (!preg_match('/<title[^>]*>(.*?)<\/title>/is', $body, $m)) {
+        return false;
+    }
+    $t = mb_strtolower(trim($m[1]));
+    if ($t === '') {
+        return false;
+    }
+    $markers = ['404', 'not found', 'page not found', 'ページが見つかり', '見つかりませんでした', 'お探しのページ', 'ページがありません', 'ページは存在しません'];
+    foreach ($markers as $kw) {
+        if (mb_strpos($t, mb_strtolower($kw)) !== false) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /** APIレスポンスからAIの本文テキストを取り出す（0件時の原因確認・表示用） */
