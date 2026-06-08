@@ -2227,6 +2227,7 @@ if ($route === 'product'):
             <?php endif; ?>
         <?php endif; ?>
     </div>
+    <?php if ($flashMsg): ?><div class="flash <?= h($flashMsg[0]) ?>"><?= nl2br(h($flashMsg[1])) ?></div><?php endif; ?>
 
     <!-- ヒーロー：合計＋箱別ドーナツ -->
     <div class="hero">
