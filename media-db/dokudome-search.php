@@ -53,6 +53,7 @@ $name     = trim((string) ($body['name'] ?? ''));
 $person   = trim((string) ($body['person'] ?? ''));
 $phone    = trim((string) ($body['phone'] ?? ''));
 $industry = trim((string) ($body['industry'] ?? ''));
+$address  = trim((string) ($body['address'] ?? ''));
 if ($name === '' && $phone === '') {
     dd_out(400, ['error' => 'no_query', 'message' => '会社名または電話番号を入力してください。']);
 }
@@ -67,6 +68,8 @@ $lines = ["会社名: {$name}"];
 if ($person !== '')   { $lines[] = "担当者名: {$person}"; }
 if ($phone !== '')    { $lines[] = "電話番号: {$phone}（番号の一致は強い手がかり）"; }
 if ($industry !== '') { $lines[] = "業種: {$industry}"; }
+$addrHint = trim((string) preg_replace('/[0-9０-９].*$/u', '', $address));   // 番地抜きの所在地
+if ($addrHint !== '') { $lines[] = "所在地: {$addrHint}"; }
 $info = implode("\n", $lines);
 
 $prompt = "あなたは企業調査の専門家です。必ずウェブ検索を使い、次の会社“自身が運営する公式ウェブサイト（独自ドメイン）”を1つだけ特定してください。\n"
@@ -133,14 +136,24 @@ foreach ($candidates as $u) {
     }
 }
 
-// 実際にアクセスできるものだけ残し、先頭を公式サイトとみなす
+// 実際にアクセスできるものだけ残し、先頭を公式サイトとみなす（ページタイトルも取得）
 $reachable = dd_filter_reachable(array_values($filtered));
 $official  = $reachable[0] ?? null;
 
 if ($official === null) {
-    dd_out(200, ['found' => false, 'url' => '', 'domain' => '', 'note' => '独自ドメインは見つかりませんでした（空白）。']);
+    dd_out(200, ['found' => false, 'pageUrl' => '', 'topUrl' => '', 'domain' => '', 'evidence' => '', 'note' => '独自ドメインは見つかりませんでした（空白）。']);
 }
-dd_out(200, ['found' => true, 'url' => $official, 'domain' => dd_host($official), 'note' => '']);
+$officialUrl = $official['url'];
+$scheme   = parse_url($officialUrl, PHP_URL_SCHEME) ?: 'https';
+$hostFull = parse_url($officialUrl, PHP_URL_HOST) ?: dd_host($officialUrl);
+dd_out(200, [
+    'found'    => true,
+    'pageUrl'  => $officialUrl,                       // 会社概要等（実際に見つかったページ）
+    'topUrl'   => $scheme . '://' . $hostFull . '/',  // URLトップ（トップページ）
+    'domain'   => dd_host($officialUrl),
+    'evidence' => $official['title'] ?? '',           // どこで判断したか（ページのタイトル）
+    'note'     => '',
+]);
 
 
 /* ============================ helpers ============================ */
@@ -354,10 +367,28 @@ function dd_filter_reachable(array $urls): array
         if ($code >= 200 && $code < 300 && dd_looks_not_found($bodies[$i] ?? '')) {
             continue;
         }
-        $kept[] = $urls[$i];
+        $kept[] = ['url' => $urls[$i], 'title' => dd_extract_title($bodies[$i] ?? '')];
     }
     curl_multi_close($mh);
     return $kept;
+}
+
+/** ページ本文(HTML)から<title>を取り出す（エンコーディング対応・どこで判断したか用） */
+function dd_extract_title(string $body): string
+{
+    if ($body === '') {
+        return '';
+    }
+    $enc = mb_detect_encoding($body, ['UTF-8', 'SJIS-win', 'EUC-JP', 'ISO-2022-JP'], true) ?: 'UTF-8';
+    if ($enc !== 'UTF-8') {
+        $body = (string) @mb_convert_encoding($body, 'UTF-8', $enc);
+    }
+    if (!preg_match('/<title[^>]*>(.*?)<\/title>/is', $body, $m)) {
+        return '';
+    }
+    $t = html_entity_decode($m[1], ENT_QUOTES, 'UTF-8');
+    $t = trim((string) preg_replace('/\s+/u', ' ', $t));
+    return mb_substr($t, 0, 120);
 }
 
 /** ページ本文の<title>が「見つかりません/404」等ならtrue（ソフト404検出） */
