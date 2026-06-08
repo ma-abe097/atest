@@ -18,6 +18,7 @@
         users:   seed.users   || [],
         media:   seed.media   || [],
         clients: seed.clients || [],
+        excludeDomains: seed.excludeDomains || [],
         isSyncing: false,
         syncError: false,
     });
@@ -55,6 +56,7 @@
                     users: store.users,
                     media: store.media,
                     clients: store.clients,
+                    excludeDomains: store.excludeDomains,
                 }),
             });
             if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -76,7 +78,7 @@
     // データ（users/media/clients）が変わったら自動保存。
     // 初期描画では発火しない（実ユーザー操作による変更時のみ）。
     watch(
-        () => [store.users, store.media, store.clients],
+        () => [store.users, store.media, store.clients, store.excludeDomains],
         save,
         { deep: true }
     );

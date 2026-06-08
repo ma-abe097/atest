@@ -14,9 +14,10 @@
         // PHPから渡す初期データと CSRF トークン
         window.__APP_DATA__ = <?= json_encode(
             [
-                'users'   => $data['users']   ?? [],
-                'media'   => $data['media']   ?? [],
-                'clients' => $data['clients'] ?? [],
+                'users'          => $data['users']          ?? [],
+                'media'          => $data['media']          ?? [],
+                'clients'        => $data['clients']        ?? [],
+                'excludeDomains' => $data['excludeDomains'] ?? [],
             ],
             JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
         ) ?>;

@@ -128,6 +128,8 @@ function mdb_default_data(): array
             ['id' => 'c4', 'name' => 'デルタ不動産',         'industry' => '不動産',   'orderDate' => '2026-05-28', 'address' => '福岡県福岡市博多区博多駅前1-1-1', 'sourceMediaId' => 'm6', 'usedMediaIds' => ['m1', 'm6', 'm8']],
             ['id' => 'c5', 'name' => 'イプシロン医療法人',   'industry' => '医療',     'orderDate' => '2026-06-02', 'address' => '北海道札幌市中央区大通西4-1',   'sourceMediaId' => 'm2', 'usedMediaIds' => ['m2', 'm8']],
         ],
+        // 独ドメげっとで除外する追加ドメイン（ユーザー編集分）。SNS/予約/ポータル等の定番は既定で除外。
+        'excludeDomains' => [],
     ];
 }
 
@@ -149,7 +151,7 @@ function load_data(): array
         save_data($data);
     }
     // キー欠落に備えて補完
-    $data += ['users' => [], 'media' => [], 'clients' => []];
+    $data += ['users' => [], 'media' => [], 'clients' => [], 'excludeDomains' => []];
 
     // 権限(role)の補完：未設定なら loginId 'admin' を管理者、それ以外は一般に。
     foreach ($data['users'] as &$u) {
@@ -166,9 +168,10 @@ function load_data(): array
 function save_data(array $data): bool
 {
     $normalized = [
-        'users'   => array_values($data['users']   ?? []),
-        'media'   => array_values($data['media']   ?? []),
-        'clients' => array_values($data['clients'] ?? []),
+        'users'          => array_values($data['users']          ?? []),
+        'media'          => array_values($data['media']          ?? []),
+        'clients'        => array_values($data['clients']        ?? []),
+        'excludeDomains' => array_values($data['excludeDomains'] ?? []),
     ];
     $json = json_encode($normalized, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
     if ($json === false) {
@@ -467,6 +470,7 @@ function nav_items(): array
         'register'    => ['データ登録・読込',      'database-zap',     'register.php'],
         'dashboard'   => ['受注一覧・ランキング',  'layout-dashboard', 'dashboard.php'],
         'flag-search' => ['フラグ(媒体)別検索',    'filter',           'flag-search.php'],
+        'dokudome'    => ['独ドメげっと',          'globe',            'dokudome.php'],
         'accounts'    => ['アカウント管理',        'users',            'accounts.php'],
     ];
 }
