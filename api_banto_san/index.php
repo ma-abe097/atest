@@ -1341,8 +1341,8 @@ function render_modals(string $csrf, array $names, array $credentials): void
             <div class="grid">
                 <div class="field"><label>API名 <span style="color:#b42318">*</span></label><input name="name" id="f_name" required placeholder="例: OpenAI API"></div>
                 <div class="field"><label>provider</label><input name="provider" id="f_provider" placeholder="例: OpenAI / Stripe / Google"></div>
-                <div class="field"><label>URL（使う画面・サービス）</label><input name="url" id="f_url" type="text" oninput="deriveSiteFromUrl()" placeholder="https://manager.line.biz/ など"><div class="hint">入力するとサイト名(ドメイン)を自動表示します。</div></div>
-                <div class="field"><label>サイト (site)</label><input name="site" id="f_site" placeholder="URLから自動／手入力も可"><div class="hint">URLのドメインから自動表示。手で書き換えもOK。</div></div>
+                <div class="field"><label>サービスURL（管理画面・ログイン画面など）</label><input name="url" id="f_url" type="text" oninput="deriveSiteFromUrl()" placeholder="https://manager.line.biz/ など"><div class="hint">そのサービス自体のページ（管理画面・ログイン画面など）。<strong>コードのどこでキーを使っているか（＝詳細の「使用箇所」）とは別物</strong>です。入力するとサイト名(ドメイン)を自動表示します。</div></div>
+                <div class="field"><label>サイト名（このAPIの分類・任意）</label><input name="site" id="f_site" placeholder="URLから自動／手入力も可"><div class="hint">このAPIをまとめるための名前（上のドメインから自動表示／手入力もOK）。コードの使用箇所とは無関係の、任意の分類用ラベルです。</div></div>
                 <div class="field"><label>月額（空欄＝未設定）</label><input name="monthly_cost" id="f_cost" type="number" step="0.01" min="0" placeholder="例: 12000"></div>
                 <div class="field"><label>通貨</label><select name="currency" id="f_currency"><?php foreach (['JPY','USD','EUR','GBP'] as $c): ?><option value="<?= $c ?>"><?= $c ?></option><?php endforeach; ?></select></div>
                 <div class="field"><label>status</label><select name="status" id="f_status"><?php foreach (STATUSES as $k => $v): ?><option value="<?= h($k) ?>"><?= h($v) ?></option><?php endforeach; ?></select></div>
@@ -2493,7 +2493,7 @@ if ($route === 'product'):
                     <?php endif; ?>
                 </tr>
                 <?php
-                    // サイト（＝ファイル先頭フォルダ）ごとにページ(URL)をまとめる
+                    // サイト（＝ファイル先頭フォルダ）ごとにファイルをまとめる
                     $bySite = [];
                     foreach ($bl['urls'] as $f) { $bySite[usage_site($f)][] = $f; }
                     ksort($bySite);
@@ -2502,7 +2502,7 @@ if ($route === 'product'):
                 <tr class="box<?= $bi ?>-url site-row" style="display:none">
                     <td></td>
                     <td style="padding-left:20px"><?= icon('globe', 15) ?> <strong><?= h($site) ?></strong><?php if ($editable): ?> <button class="link" type="button" onclick='renameSite(<?= htmlspecialchars(json_encode($site, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)' title="サイト名を変更"><?= icon('gear', 13) ?></button><?php endif; ?></td>
-                    <td class="muted"><?= count($sfiles) ?> ページ</td>
+                    <td class="muted"><?= count($sfiles) ?> ファイル</td>
                     <td></td><?php if ($editable): ?><td class="hide-sm"></td><?php endif; ?>
                 </tr>
                 <?php foreach ($sfiles as $f):
@@ -2532,7 +2532,7 @@ if ($route === 'product'):
                 <tr class="box<?= $bi ?>-url site-row" style="display:none">
                     <td></td>
                     <td style="padding-left:20px"><?= icon('globe', 15) ?> <strong><?= h($site) ?></strong><?php if ($editable): ?> <button class="link" type="button" onclick='renameSite(<?= htmlspecialchars(json_encode($site, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)' title="サイト名を変更"><?= icon('gear', 13) ?></button><?php endif; ?></td>
-                    <td class="muted"><?= count($sfiles) ?> ページ</td>
+                    <td class="muted"><?= count($sfiles) ?> ファイル</td>
                     <td></td><?php if ($editable): ?><td class="hide-sm"></td><?php endif; ?>
                 </tr>
                 <?php foreach ($sfiles as $f):
@@ -2955,14 +2955,14 @@ if ($route === 'product'):
                     <?php if (!$urls): ?><span class="muted">URLなし（移動バーでこの箱へURL/サイトを割り当てできます）</span><?php endif; ?>
                     <?php if ($editable && $urls): ?><label class="hint" style="display:inline-block;margin-bottom:4px"><input type="checkbox" onchange="selAllBox(this,<?= $gi ?>,<?= $pj ?>)" style="width:auto"> この箱のURLを全選択</label><?php endif; ?>
                     <?php
-                        // サイト（＝ファイルの先頭フォルダ）ごとにページ(URL)をまとめる
+                        // サイト（＝ファイルの先頭フォルダ）ごとにファイルをまとめる
                         $bySite = [];
                         foreach ($urls as $f) { $bySite[usage_site($f)][] = $f; }
                         ksort($bySite);
                     ?>
                     <?php foreach ($bySite as $site => $sfiles): ?>
                         <div class="site-group">
-                            <div class="site-head"><span class="sc"><?= icon('globe', 15) ?></span> <strong><?= h($site) ?></strong> <span class="muted" style="font-weight:400">（<?= count($sfiles) ?> ページ）</span><?php if ($editable): ?> <button class="link" type="button" onclick='renameSite(<?= htmlspecialchars(json_encode($site, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)' title="サイト名を変更"><?= icon('gear', 13) ?></button><?php endif; ?></div>
+                            <div class="site-head"><span class="sc"><?= icon('globe', 15) ?></span> <strong><?= h($site) ?></strong> <span class="muted" style="font-weight:400">（<?= count($sfiles) ?> ファイル）</span><?php if ($editable): ?> <button class="link" type="button" onclick='renameSite(<?= htmlspecialchars(json_encode($site, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)' title="サイト名を変更"><?= icon('gear', 13) ?></button><?php endif; ?></div>
                             <?php foreach ($sfiles as $f):
                                 $pathStr = $site . ' / ' . $f['file'] . ($f['line'] !== null ? ':' . (int) $f['line'] : '');
                             ?>
