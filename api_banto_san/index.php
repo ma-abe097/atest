@@ -14,12 +14,10 @@ declare(strict_types=1);
  *   - APIカタログ・使用箇所の手動編集（member 以上）。viewer は閲覧のみ。
  *   - グループ作成・メンバー招待・ロール変更は groups.php。
  *
- * 重要な制約:
- *   - APIキー本体は絶対に保存しない。鍵の在りか(key_location) のみ記録する。
- *   - monthly_cost / notes / owner などは手動フィールド。
- *
- * 将来フェーズ（未実装）: スキャナCLI連携(scan/push, 手動フィールドのマージ保持) /
- *   各社 billing/usage API 連携による monthly_cost 半自動更新（仕様書 §6,§9）。
+ * キー・秘密情報:
+ *   - APIキー本体は APP_ENCRYPTION_KEY による AES-256-GCM で暗号化保存（一覧から表示/コピー可）。
+ *   - 鍵の在りか(key_location) / 使用箇所(usages = 場所名・URL・メモ) は手動入力。
+ *   - monthly_cost / notes / owner なども手動フィールド（コストは一部プロバイダで自動取得）。
  */
 
 require __DIR__ . '/bootstrap.php';
@@ -45,16 +43,6 @@ if ($route === 'oauth2callback') {
         flash('err', 'ログインに失敗しました: ' . $e->getMessage());
     }
     redirect(app_url());
-}
-
-// スタンドアロン・スキャナのソースを base64 で配布（別サーバーへ取り込む用）。
-// base64 にするのは、WAFがレスポンス中のコードを誤検知して弾くのを避けるため。
-//   curl -s "...index.php?route=getscanner" | base64 -d > scan_standalone.php
-if ($route === 'getscanner') {
-    $file = __DIR__ . '/scan_standalone.php';
-    header('Content-Type: text/plain; charset=utf-8');
-    echo is_file($file) ? base64_encode((string) file_get_contents($file)) : '';
-    exit;
 }
 
 // ローカル検証用の簡易ログイン（既定OFF。本番では無効）
@@ -112,99 +100,6 @@ $user  = current_user();
 $gid   = current_group_id();      // 所属グループ先頭に補正済み
 $group = current_group();
 $role  = current_role();
-
-/* ================================================================== *
- *  個人用トークン画面（CLI push 用トークンの発行・失効）
- * ================================================================== */
-if ($route === 'tokens') {
-    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        check_csrf();
-        $a = $_POST['action'] ?? '';
-        if ($a === 'create_token') {
-            $label = trim((string) ($_POST['label'] ?? '')) ?: 'token';
-            $_SESSION['new_token'] = issue_api_token((int) $user['id'], $label);
-            flash('ok', '個人用トークンを発行しました。表示は一度だけです。今すぐコピーしてください。');
-        } elseif ($a === 'revoke_token') {
-            revoke_api_token((int) $user['id'], (int) ($_POST['token_id'] ?? 0));
-            flash('ok', 'トークンを失効しました。');
-        }
-        redirect(app_url('tokens'));
-    }
-    render_tokens_page($user);
-    exit;
-}
-
-/* ================================================================== *
- *  サーバ内スキャン画面（heteml 上のファイルを直接走査・admin 以上）
- * ================================================================== */
-if ($route === 'scan') {
-    require_role_at_least($gid, 'admin');
-    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        check_csrf();
-        $a = $_POST['action'] ?? '';
-
-        $withSecrets = !empty($_POST['with_secrets']);
-        // スキャン結果メッセージの共通整形
-        $say = static function (array $res) use ($withSecrets): void {
-            $msg = sprintf('スキャン完了: 新規 %d 件 / 更新 %d 件 / 使用箇所 %d 件を反映（手動入力のコスト等は保持）。',
-                $res['created'], $res['updated'], $res['usages']);
-            if ($withSecrets) { $msg .= ' .env等のキー値も暗号化して取り込みました。'; }
-            flash('ok', $msg);
-        };
-
-        try {
-            if ($a === 'add_target') {
-                $path = trim((string) ($_POST['path'] ?? ''));
-                $label = trim((string) ($_POST['label'] ?? '')) ?: basename(rtrim($path, '/\\'));
-                if ($path === '' || realpath($path) === false || !is_dir((string) realpath($path))) {
-                    flash('err', 'ディレクトリが見つかりません: ' . $path . "\n" . path_diagnostics($path));
-                } else {
-                    add_scan_target($gid, $label, $path);
-                    flash('ok', 'スキャン対象を保存しました。次回からワンクリックでスキャンできます。');
-                }
-            } elseif ($a === 'delete_target') {
-                delete_scan_target($gid, (int) ($_POST['target_id'] ?? 0));
-                flash('ok', 'スキャン対象を削除しました。');
-            } elseif ($a === 'run_target') {
-                $targets = list_scan_targets($gid);
-                $tid = (int) ($_POST['target_id'] ?? 0);
-                $t = null;
-                foreach ($targets as $row) { if ((int) $row['id'] === $tid) { $t = $row; break; } }
-                if (!$t) {
-                    flash('err', '対象が見つかりません。');
-                } else {
-                    $say(run_scan_on_dir($gid, $t['path'], $t['label'], $withSecrets));
-                    touch_scan_target($tid);
-                }
-            } elseif ($a === 'run_all') {
-                $targets = list_scan_targets($gid);
-                if (!$targets) {
-                    flash('err', '保存済みのスキャン対象がありません。');
-                } else {
-                    $tot = ['created' => 0, 'updated' => 0, 'usages' => 0];
-                    foreach ($targets as $t) {
-                        $r = run_scan_on_dir($gid, $t['path'], $t['label'], $withSecrets);
-                        foreach ($tot as $k => $_) { $tot[$k] += $r[$k]; }
-                        touch_scan_target((int) $t['id']);
-                    }
-                    $say($tot);
-                }
-            } elseif ($a === 'run_path') {
-                $path = trim((string) ($_POST['path'] ?? ''));
-                $repo = trim((string) ($_POST['repo'] ?? ''));
-                $say(run_scan_on_dir($gid, $path, $repo, $withSecrets));
-            } elseif ($a === 'upload_scan') {
-                $repo = trim((string) ($_POST['repo'] ?? ''));
-                $say(run_scan_on_uploads($gid, $_FILES['files'] ?? [], $repo, $withSecrets));
-            }
-        } catch (Throwable $e) {
-            flash('err', 'スキャンに失敗しました: ' . $e->getMessage());
-        }
-        redirect(app_url('scan'));
-    }
-    render_scan_page($user, $group, $gid);
-    exit;
-}
 
 /* ------------------------------------------------------------------ *
  *  POST 処理（カタログ編集）— すべてサーバ側で権限チェック
@@ -595,6 +490,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pw = reveal_account_password($gid, (int) ($_POST['account_id'] ?? 0));
         header('Content-Type: application/json');
         echo json_encode(['password' => $pw]);
+        exit;
+    }
+
+    // APIキー本体を復号して返す（コピー/表示用・member 以上）
+    if ($action === 'reveal_api_key') {
+        require_role_at_least($gid, 'member');
+        $id = (int) ($_POST['id'] ?? 0);
+        $st = $pdo->prepare('SELECT secret_enc FROM apis WHERE id=:id AND group_id=:gid');
+        $st->execute([':id' => $id, ':gid' => $gid]);
+        $row = $st->fetch();
+        header('Content-Type: application/json');
+        echo json_encode(['key' => $row ? decrypt_secret($row['secret_enc'] ?? null) : null]);
         exit;
     }
 
@@ -1127,227 +1034,6 @@ function render_login_page(): void
     <?php
 }
 
-/** 個人用トークン画面 */
-function render_tokens_page(array $user): void
-{
-    $tokens   = list_api_tokens((int) $user['id']);
-    $newToken = $_SESSION['new_token'] ?? null;
-    unset($_SESSION['new_token']);
-    $flashMsg = take_flash();
-    $csrf     = csrf_token();
-    $endpoint = app_base_url() . '/api.php';
-    ?>
-<!DOCTYPE html>
-<html lang="ja"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title><?= h(APP_NAME) ?> — 個人用トークン</title>
-<?php render_styles(); ?>
-</head><body>
-<div class="layout">
-<?php render_sidebar('tokens'); ?>
-<main class="main">
-    <div class="topbar"><h2><?= icon('key') ?> 個人用トークン</h2></div>
-    <?php if ($flashMsg): ?><div class="flash <?= h($flashMsg[0]) ?>"><?= nl2br(h($flashMsg[1])) ?></div><?php endif; ?>
-
-    <?php if ($newToken): ?>
-        <div class="stat" style="background:#fffbe6;border-color:#facc15;width:100%">
-            <div class="label">発行されたトークン（この表示は一度きり）</div>
-            <code style="font-size:14px;display:block;margin:6px 0;word-break:break-all"><?= h($newToken) ?></code>
-            <div class="hint">CLI では環境変数 <code>APICATALOG_TOKEN</code> に設定して使います。</div>
-        </div>
-    <?php endif; ?>
-
-    <div class="stat" style="width:100%;margin-bottom:14px">
-        <h2 style="margin:0 0 8px;font-size:16px">スキャナCLI の使い方</h2>
-        <p class="hint" style="margin:0 0 8px">SSH やローカルPCで <code>scan.php</code> を実行し、検出結果をこのサイトへ送信します。コスト金額はコードからは取得しません（Web UIで手動入力）。再送信時も手動入力のコスト・メモ・status は保持されます。</p>
-        <code style="display:block;white-space:pre-wrap;font-size:12.5px">export APICATALOG_TOKEN="発行したトークン"
-php scan.php --path /path/to/site --push \
-  --endpoint <?= h($endpoint) ?> \
-  --group <?= h((string) (current_group_id() ?? '')) ?></code>
-    </div>
-
-    <div class="stat" style="width:100%;margin-bottom:14px">
-        <h2 style="margin:0 0 10px;font-size:16px">新しいトークンを発行</h2>
-        <form method="post" class="row" style="display:flex;gap:8px">
-            <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-            <input type="hidden" name="action" value="create_token">
-            <input name="label" placeholder="用途ラベル（例: my-macbook）" style="flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:8px">
-            <button class="primary" type="submit">発行</button>
-        </form>
-    </div>
-
-    <table>
-        <thead><tr><th>ラベル</th><th>状態</th><th>最終使用</th><th>発行日</th><th></th></tr></thead>
-        <tbody>
-        <?php if (!$tokens): ?>
-            <tr><td colspan="5" class="muted" style="text-align:center;padding:20px">まだトークンはありません。</td></tr>
-        <?php endif; ?>
-        <?php foreach ($tokens as $t): ?>
-            <tr>
-                <td><?= h($t['label']) ?></td>
-                <td><?= ((int) $t['revoked'] === 1) ? '<span class="pill deprecated">失効</span>' : '<span class="pill active">有効</span>' ?></td>
-                <td class="muted"><?= h($t['last_used_at'] ?? '—') ?></td>
-                <td class="muted"><?= h($t['created_at']) ?></td>
-                <td>
-                    <?php if ((int) $t['revoked'] === 0): ?>
-                        <form method="post" onsubmit="return abtConfirmForm(this, 'このトークンを失効しますか？')">
-                            <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-                            <input type="hidden" name="action" value="revoke_token">
-                            <input type="hidden" name="token_id" value="<?= (int) $t['id'] ?>">
-                            <button class="link danger" type="submit">失効</button>
-                        </form>
-                    <?php endif; ?>
-                </td>
-            </tr>
-        <?php endforeach; ?>
-        </tbody>
-    </table>
-</main></div></body></html>
-    <?php
-}
-
-/** サーバ内スキャン画面（admin 以上） */
-function render_scan_page(array $user, array $group, int $gid): void
-{
-    $flashMsg = take_flash();
-    $csrf = csrf_token();
-    $targets = list_scan_targets($gid);
-    $guess = realpath(__DIR__ . '/../') ?: dirname(__DIR__);
-    $zipOk = class_exists('ZipArchive');
-    ?>
-<!DOCTYPE html>
-<html lang="ja"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title><?= h(APP_NAME) ?> — スキャン</title>
-<?php render_styles(); ?>
-</head><body>
-<div class="layout">
-<?php render_sidebar('scan'); ?>
-<main class="main">
-    <div class="topbar"><h2><?= icon('search') ?> スキャン</h2><span class="grow"></span><span class="muted"><?= h($group['name']) ?></span></div>
-    <?php if ($flashMsg): ?><div class="flash <?= h($flashMsg[0]) ?>"><?= nl2br(h($flashMsg[1])) ?></div><?php endif; ?>
-
-    <p class="hint" style="margin-top:0">ソースを走査して外部APIの使用箇所を自動検出し、<strong><?= h($group['name']) ?></strong> のカタログに反映します。
-    手動入力したコスト・メモ・status は<strong>上書きされません</strong>。使用箇所スニペットのキー値は伏字化します。
-    <code>node_modules</code>/<code>vendor</code>/<code>.git</code> 等は自動除外。</p>
-
-    <!-- キー値の自動取り込み（オプトイン） -->
-    <div class="stat" style="width:100%;margin-bottom:14px;<?= encryption_ready() ? 'background:#f0fdf4;border-color:#86efac' : 'background:#fff4e0;border-color:#facc15' ?>">
-        <label style="display:flex;align-items:center;gap:8px;font-weight:600;<?= encryption_ready() ? '' : 'color:#92400e' ?>">
-            <input type="checkbox" id="withSecretsToggle" style="width:auto" <?= encryption_ready() ? '' : 'disabled' ?>>
-            <?= icon('lock', 15) ?> .env等に書かれた「キーの値」も暗号化して取り込む（コスト自動取得用）
-        </label>
-        <div class="hint" style="margin-top:4px">
-            <?= encryption_ready()
-                ? 'チェックを入れてスキャンすると、<code>NAME=値</code> 形式のキー値を拾って暗号化保存します（値そのものは画面に出ません）。off の時は従来どおり取り込みません。'
-                : '⚠ 使うには <code>APP_ENCRYPTION_KEY</code> の設定が必要です（config.local.php）。未設定のため今は無効です。' ?>
-        </div>
-    </div>
-
-    <!-- ① 保存済みスキャン対象（ワンクリック） -->
-    <div class="stat" style="width:100%;margin-bottom:14px">
-        <div class="row" style="display:flex;justify-content:space-between;align-items:center">
-            <h2 style="margin:0;font-size:16px">① 保存したフォルダをスキャン（heteml内・ワンクリック）</h2>
-            <?php if (count($targets) > 1): ?>
-                <form method="post" class="scanform" style="margin:0">
-                    <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-                    <input type="hidden" name="action" value="run_all">
-                    <button class="primary" type="submit">すべてスキャン</button>
-                </form>
-            <?php endif; ?>
-        </div>
-        <?php if (!$targets): ?>
-            <p class="hint" style="margin:8px 0 0">まだ登録がありません。下の②で対象フォルダを保存すると、ここにワンクリックボタンが並びます。</p>
-        <?php else: ?>
-            <table style="margin-top:10px">
-                <thead><tr><th>ラベル</th><th>パス</th><th>最終スキャン</th><th></th></tr></thead>
-                <tbody>
-                <?php foreach ($targets as $t): ?>
-                    <tr>
-                        <td><strong><?= h($t['label']) ?></strong></td>
-                        <td class="muted" style="word-break:break-all"><code><?= h($t['path']) ?></code></td>
-                        <td class="muted"><?= h($t['last_scanned_at'] ?? '—') ?></td>
-                        <td style="white-space:nowrap">
-                            <form method="post" class="scanform" style="display:inline">
-                                <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-                                <input type="hidden" name="action" value="run_target">
-                                <input type="hidden" name="target_id" value="<?= (int) $t['id'] ?>">
-                                <button class="primary" type="submit">スキャン</button>
-                            </form>
-                            <form method="post" style="display:inline" onsubmit="return abtConfirmForm(this, '「<?= h($t['label']) ?>」を削除しますか？')">
-                                <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-                                <input type="hidden" name="action" value="delete_target">
-                                <input type="hidden" name="target_id" value="<?= (int) $t['id'] ?>">
-                                <button class="link danger" type="submit">削除</button>
-                            </form>
-                        </td>
-                    </tr>
-                <?php endforeach; ?>
-                </tbody>
-            </table>
-        <?php endif; ?>
-    </div>
-
-    <!-- ② スキャン対象フォルダを保存 -->
-    <div class="stat" style="width:100%;margin-bottom:14px">
-        <h2 style="margin:0 0 10px;font-size:16px">② スキャン対象フォルダを保存（最初の1回だけ）</h2>
-        <form method="post" class="scanform">
-            <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-            <input type="hidden" name="action" value="add_target">
-            <div class="field" style="margin-bottom:8px">
-                <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">サーバ上の絶対パス</label>
-                <input name="path" required value="<?= h($guess) ?>" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px">
-                <div class="hint">あなたのサイトのドキュメントルート。上は推測値です。実際のパスに直してください。</div>
-            </div>
-            <div class="field" style="margin-bottom:10px">
-                <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">ラベル（任意）</label>
-                <input name="label" placeholder="例: mysite" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px">
-            </div>
-            <button class="primary" type="submit">対象として保存</button>
-            <button class="" type="submit" formaction="<?= h(app_url('scan')) ?>" name="action" value="run_path" style="margin-left:6px">保存せず今すぐ1回だけスキャン</button>
-        </form>
-    </div>
-
-    <!-- ③ ファイルアップロード（PC/Gドライブのコード） -->
-    <div class="stat" style="width:100%">
-        <h2 style="margin:0 0 8px;font-size:16px">③ ファイルをアップロードしてスキャン（PC・Gドライブのコード用）</h2>
-        <p class="hint" style="margin:0 0 10px">heteml の外（手元PCやGドライブ）にあるコードは、ここからアップロードしてスキャンできます。SSH・トークン不要。<br>
-        <strong>.py / .php / .js などのファイルをそのまま選択OK</strong>（複数選択も可）。フォルダごとなら ZIP にまとめてアップロードしてください。</p>
-        <form method="post" class="scanform" enctype="multipart/form-data">
-            <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
-            <input type="hidden" name="action" value="upload_scan">
-            <div class="field" style="margin-bottom:8px">
-                <input type="file" name="files[]" multiple required style="width:100%">
-                <div class="hint"><?= $zipOk ? '.py / .php / .js / .ts などのソース、または .zip。複数まとめて選べます。' : '.py / .php / .js などのソースを選択（このサーバはZIP展開が無効のため、ZIPは使えません）。' ?></div>
-            </div>
-            <div class="field" style="margin-bottom:10px">
-                <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">repo ラベル（任意・どこ由来か区別用）</label>
-                <input name="repo" placeholder="例: gdrive-scripts" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px">
-            </div>
-            <button class="primary" type="submit">アップロードしてスキャン</button>
-            <span class="hint">合計上限 80MB。アップロードしたファイルは解析後すぐ削除されます。</span>
-        </form>
-    </div>
-
-    <p class="hint" style="margin-top:14px">⚠ 自分が管理するコードのみをスキャンしてください。</p>
-</main>
-</div>
-<script>
-    // 「キー値も取り込む」トグルを、各スキャンフォームの送信時に反映
-    document.addEventListener('submit', function (e) {
-        const f = e.target;
-        if (!f.classList || !f.classList.contains('scanform')) return;
-        const tg = document.getElementById('withSecretsToggle');
-        if (!tg) return;
-        let i = f.querySelector('input[name="with_secrets"]');
-        if (!i) { i = document.createElement('input'); i.type = 'hidden'; i.name = 'with_secrets'; f.appendChild(i); }
-        i.value = tg.checked ? '1' : '';
-    });
-</script>
-</body></html>
-    <?php
-}
-
 /** API追加/編集・プロジェクト箱 編集モーダル＋その操作JS（dashboard/詳細で共用） */
 function render_modals(string $csrf, array $names, array $credentials): void
 {
@@ -1362,35 +1048,30 @@ function render_modals(string $csrf, array $names, array $credentials): void
         <div class="modal-head" id="modalTitle">API を追加</div>
         <div class="modal-body">
             <div class="grid">
-                <div class="field"><label>API名 <span style="color:#b42318">*</span></label><input name="name" id="f_name" required placeholder="例: OpenAI API"></div>
-                <div class="field"><label>provider</label><input name="provider" id="f_provider" placeholder="例: OpenAI / Stripe / Google"></div>
-                <div class="field"><label>サービスURL（管理画面・ログイン画面など）</label><input name="url" id="f_url" type="text" oninput="deriveSiteFromUrl()" placeholder="https://manager.line.biz/ など"><div class="hint">そのサービス自体のページ（管理画面・ログイン画面など）。<strong>コードのどこでキーを使っているか（＝詳細の「使用箇所」）とは別物</strong>です。入力すると下の「ドメイン／サービス」欄にドメインを自動表示します。</div></div>
-                <div class="field"><label>ドメイン／サービス（任意）</label><input name="site" id="f_site" placeholder="URLから自動／手入力も可"><div class="hint">このAPI自体のサービス（上のドメインから自動表示／手入力もOK）。コードの使用箇所とは無関係です。</div></div>
-                <div class="field"><label>月額（空欄＝未設定）</label><input name="monthly_cost" id="f_cost" type="number" step="0.01" min="0" placeholder="例: 12000"></div>
-                <div class="field"><label>通貨</label><select name="currency" id="f_currency"><?php foreach (['JPY','USD','EUR','GBP'] as $c): ?><option value="<?= $c ?>"><?= $c ?></option><?php endforeach; ?></select></div>
-                <div class="field"><label>status</label><select name="status" id="f_status"><?php foreach (STATUSES as $k => $v): ?><option value="<?= h($k) ?>"><?= h($v) ?></option><?php endforeach; ?></select></div>
-                <div class="field"><label>担当 (owner)</label><input name="owner" id="f_owner" placeholder="例: 開発チーム"></div>
-                <div class="field full"><label>鍵の在りか (key_location)</label><input name="key_location" id="f_key" placeholder="例: env: OPENAI_API_KEY"><div class="hint">環境変数名など「在りか」。下の「APIキー(値)」とは別です。</div></div>
-                <div class="field full" style="border-top:1px dashed var(--line);padding-top:10px">
-                    <label><?= icon('lock', 15) ?> APIキー（値）— 任意（主にOpenAIの保険用）</label>
-                    <input type="password" name="secret" id="f_secret" autocomplete="new-password" placeholder="ここにキーの値を貼る（暗号化保存）">
-                    <div class="hint" style="background:#fff4e0;color:#92400e;padding:7px 10px;border-radius:8px;white-space:normal">⚠ <strong>コストの自動取得はこの欄ではできません</strong>（OpenAIの保険用途のみ）。Claude/Anthropic 等のコスト取得は「<strong>コスト取得キー</strong>」を作って箱／プロダクトに割り当てるか、<strong>箱の編集</strong>でキーを設定してください。</div>
+                <div class="field"><label>API名 <span style="color:#b42318">*</span></label><input name="name" id="f_name" required placeholder="例: OpenAI 本番キー"></div>
+                <div class="field"><label>提供元 (provider)</label><input name="provider" id="f_provider" placeholder="例: OpenAI / Stripe / Google"></div>
+                <div class="field full" style="background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:12px 13px">
+                    <label><?= icon('lock', 15) ?> APIキー（本体）</label>
+                    <input type="password" name="secret" id="f_secret" autocomplete="new-password" placeholder="例: sk-xxxxxxxx（ここに貼るだけ）">
                     <div class="hint" id="f_secret_state"></div>
                     <label style="font-weight:400;font-size:12px;display:inline-flex;align-items:center;gap:4px;margin-top:4px">
                         <input type="checkbox" name="secret_clear" id="f_secret_clear" value="1" style="width:auto"> 保存済みのキーを削除する
                     </label>
                     <div class="hint"><?= encryption_ready()
-                        ? '暗号化して保存します。空欄なら現状維持（既存キーはそのまま）。'
-                        : '⚠ APP_ENCRYPTION_KEY が未設定のため、キー値は保存できません（config.local.php に設定してください）。' ?></div>
+                        ? '🔒 暗号化して保存し、一覧から「表示」「コピー」できます。空欄なら現状維持（既存キーはそのまま）。'
+                        : '⚠ APP_ENCRYPTION_KEY が未設定のため、キー本体は保存できません（config.local.php に設定）。在りか・メモ・使用箇所は保存できます。' ?></div>
                 </div>
-                <div class="field full">
-                    <label>コスト用プロジェクトID（任意・OpenAI等）</label>
-                    <input name="cost_project" id="f_cost_project" placeholder="例: proj_xxxxx（空なら組織全体の合計）">
-                    <div class="hint"><?= icon('refresh', 15) ?> コスト時、IDを入れると<strong>そのプロジェクトのみ</strong>、空なら<strong>組織全体の合計</strong>を取得します。OpenAIのプロジェクト設定で確認できます。</div>
-                </div>
-                <div class="field"><label>請求ページURL (billing_url)</label><input name="billing_url" id="f_billing" type="url" placeholder="https://..."></div>
-                <div class="field"><label>ドキュメントURL (docs_url)</label><input name="docs_url" id="f_docs" type="url" placeholder="https://..."></div>
-                <div class="field full"><label>メモ (notes)</label><textarea name="notes" id="f_notes" rows="3" placeholder="補足・コスト変動の理由など"></textarea></div>
+                <div class="field full"><label>鍵の在りか（メモ・任意）</label><input name="key_location" id="f_key" placeholder="例: env: OPENAI_API_KEY / 1Password など"><div class="hint">「どこに置いてあるか」の覚え書き。上の「キー本体」とは別で、検索対象になります。</div></div>
+                <div class="field"><label>月額（空欄＝未設定）</label><input name="monthly_cost" id="f_cost" type="number" step="0.01" min="0" placeholder="例: 12000"></div>
+                <div class="field"><label>通貨</label><select name="currency" id="f_currency"><?php foreach (['JPY','USD','EUR','GBP'] as $c): ?><option value="<?= $c ?>"><?= $c ?></option><?php endforeach; ?></select></div>
+                <div class="field"><label>状態</label><select name="status" id="f_status"><?php foreach (STATUSES as $k => $v): ?><option value="<?= h($k) ?>"><?= h($v) ?></option><?php endforeach; ?></select></div>
+                <div class="field"><label>担当</label><input name="owner" id="f_owner" placeholder="例: 開発チーム"></div>
+                <div class="field full"><label>サービスURL（管理画面・ログイン画面など・任意）</label><input name="url" id="f_url" type="text" oninput="deriveSiteFromUrl()" placeholder="https://platform.openai.com/ など"></div>
+                <div class="field"><label>ドメイン／サービス（任意）</label><input name="site" id="f_site" placeholder="URLから自動／手入力も可"></div>
+                <div class="field"><label>コスト用プロジェクトID（OpenAI・任意）</label><input name="cost_project" id="f_cost_project" placeholder="proj_xxxxx（空＝組織全体）"><div class="hint">OpenAIのAdminキーを保存しておくと、詳細画面から月額を自動取得できます。</div></div>
+                <div class="field"><label>請求ページURL（任意）</label><input name="billing_url" id="f_billing" type="url" placeholder="https://..."></div>
+                <div class="field"><label>ドキュメントURL（任意）</label><input name="docs_url" id="f_docs" type="url" placeholder="https://..."></div>
+                <div class="field full"><label>メモ（任意）</label><textarea name="notes" id="f_notes" rows="3" placeholder="補足・コスト変動の理由など"></textarea></div>
             </div>
         </div>
         <div class="modal-foot">
@@ -2687,20 +2368,22 @@ if ($route === 'product'):
 </script>
 </body></html>
 <?php exit; endif; ?>
+<?php /* ================= コスト・ダッシュボード（route=cost） ================= */ ?>
+<?php if ($route === 'cost'): ?>
 <!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title><?= h(APP_NAME) ?> — <?= h($group['name']) ?></title>
+<title><?= h(APP_NAME) ?> — コスト — <?= h($group['name']) ?></title>
 <?php render_styles(); ?>
 </head>
 <body>
 <div class="layout">
-<?php render_sidebar('dashboard'); ?>
+<?php render_sidebar('cost'); ?>
 <main class="main">
     <div class="topbar">
-        <h2>ダッシュボード</h2>
+        <h2>コスト</h2>
         <span class="grow"></span>
         <?php if ($editable): ?>
             <form method="post" style="display:inline" onsubmit="return abtConfirmForm(this, '全プロジェクト箱のコストを今すぐ取得します。よろしいですか？（数が多いと少し時間がかかります）')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="refresh_costs"><button type="submit" class="btn"><?= icon('refresh', 15) ?> コスト一括更新</button></form>
@@ -3168,5 +2851,342 @@ if ($route === 'product'):
         caret.classList.toggle('open', open);
     }
 </script>
+</body>
+</html>
+<?php exit; endif; ?>
+
+<?php
+/* ================================================================== *
+ *  フロント共用アセット：キー表示/コピー＋「使い方」ツアー（依存なしの素のJS）
+ * ================================================================== */
+function abt_front_assets(string $csrf, bool $withTour = false): void { ?>
+<div id="abtToast"></div>
+<style>
+    .keyrow { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+    .keyhint { background:#f1f5f9; border:1px solid var(--line); border-radius:7px; padding:3px 9px; font-size:12px; word-break:break-all; max-width:100%; }
+    .keyhint.shown { background:#fff7ed; border-color:#fdba74; }
+    .btn.sm, button.sm { padding:4px 10px; font-size:12px; }
+    .apicard { display:flex; flex-direction:column; gap:8px; }
+    .apicard-meta { display:flex; align-items:center; gap:8px; font-size:13px; color:#475569; flex-wrap:wrap; }
+    .apicard-foot { display:flex; align-items:center; gap:6px; border-top:1px solid var(--line); padding-top:9px; margin-top:auto; }
+    .usagelink { font-size:13px; color:#1d4ed8; text-decoration:none; display:inline-flex; align-items:center; gap:4px; }
+    .sbadge { font-size:11px; padding:2px 9px; border-radius:999px; background:#e2e8f0; color:#334155; white-space:nowrap; }
+    .sbadge.s-active { background:#dcfce7; color:#166534; }
+    .sbadge.s-deprecated { background:#fee2e2; color:#991b1b; }
+    .sbadge.s-unused { background:#f1f5f9; color:#64748b; }
+    .abt-search { display:flex; gap:8px; align-items:center; }
+    .abt-search input { flex:1; max-width:440px; }
+    .abt-kv { display:grid; grid-template-columns:150px 1fr; gap:9px 16px; }
+    .abt-kv .abt-k { color:#64748b; font-size:13px; font-weight:600; }
+    .abt-kv .abt-v { word-break:break-word; }
+    @media (max-width:560px) { .abt-kv { grid-template-columns:1fr; } .abt-kv .abt-k { margin-top:8px; } }
+    #abtTourMask { position:fixed; inset:0; background:rgba(15,23,42,.5); z-index:9000; display:none; }
+    #abtTourPop { position:fixed; z-index:9002; max-width:300px; background:#fff; border-radius:14px; box-shadow:0 14px 44px rgba(0,0,0,.32); padding:16px 18px; display:none; }
+    #abtTourPop h4 { margin:0 0 6px; font-size:15px; }
+    #abtTourPop .tbody { color:#475569; line-height:1.65; font-size:13.5px; margin-bottom:13px; }
+    #abtTourPop .tfoot { display:flex; align-items:center; gap:8px; }
+    #abtTourPop .tstep { font-size:12px; color:#94a3b8; margin-right:auto; }
+    .abt-tour-hl { position:relative; z-index:9001; box-shadow:0 0 0 4px #fbbf24, 0 0 0 9999px rgba(15,23,42,.5); border-radius:10px; }
+</style>
+<script>
+    const ABT_CSRF = <?= json_encode($csrf) ?>;
+    function abtRevealKey(id, btn) {
+        const code = document.getElementById('kh' + id);
+        if (btn && btn.dataset.shown === '1') {
+            if (code) { code.textContent = code.dataset.hint || '••••'; code.classList.remove('shown'); }
+            btn.dataset.shown = ''; btn.textContent = '表示'; return;
+        }
+        const b = new URLSearchParams(); b.append('csrf', ABT_CSRF); b.append('action', 'reveal_api_key'); b.append('id', id);
+        fetch('index.php', { method:'POST', headers:{ 'Content-Type':'application/x-www-form-urlencoded' }, body:b })
+            .then(r => r.json()).then(d => {
+                if (d && d.key) { if (code) { code.dataset.hint = code.textContent; code.textContent = d.key; code.classList.add('shown'); } if (btn) { btn.dataset.shown = '1'; btn.textContent = '隠す'; } }
+                else { abtToast('キーが保存されていません'); }
+            }).catch(() => abtToast('取得に失敗しました'));
+    }
+    function abtCopyKey(id) {
+        const b = new URLSearchParams(); b.append('csrf', ABT_CSRF); b.append('action', 'reveal_api_key'); b.append('id', id);
+        fetch('index.php', { method:'POST', headers:{ 'Content-Type':'application/x-www-form-urlencoded' }, body:b })
+            .then(r => r.json()).then(d => { if (d && d.key) { copyText(d.key); } else { abtToast('キーが保存されていません'); } })
+            .catch(() => abtToast('取得に失敗しました'));
+    }
+    /* ---- 使い方ツアー ---- */
+    const ABT_TOUR_KEY = 'abtTourApiList_v1';
+    const ABT_TOUR_STEPS = [
+        { sel:'#btnAddApi',         title:'① まずAPIを登録', body:'「APIを追加」を押すと、名前・提供元・APIキー本体・メモを1つの画面でまとめて登録できます。' },
+        { sel:'.apicard .keyrow',   title:'② キーの表示とコピー', body:'登録したキーは伏字で安全に保存されます。「表示」で中身を確認、「コピー」でワンクリックでコピーできます。' },
+        { sel:'.apicard .usagelink',title:'③ 使っている場所', body:'1つのキーを複数の場所で使っていてもOK。「詳細」を開くと、使用箇所をいくつでも登録・確認できます。' },
+        { sel:'.abt-search',        title:'④ 検索', body:'API名・提供元・メモから、目的のキーをすぐに探せます。' },
+        { sel:'.nav[href*="route=cost"]', title:'⑤ コストとグラフ', body:'月額やコストの推移グラフは、左メニューの「コスト」から見られます。' }
+    ];
+    let abtTourI = 0;
+    function abtTourStart() { abtTourI = 0; abtTourShow(); }
+    function abtTourEnd(dontShow) {
+        const m = document.getElementById('abtTourMask'), p = document.getElementById('abtTourPop');
+        if (m) m.style.display = 'none'; if (p) p.style.display = 'none';
+        document.querySelectorAll('.abt-tour-hl').forEach(e => e.classList.remove('abt-tour-hl'));
+        if (dontShow) { try { localStorage.setItem(ABT_TOUR_KEY, '1'); } catch (e) {} }
+    }
+    function abtTourShow() {
+        document.querySelectorAll('.abt-tour-hl').forEach(e => e.classList.remove('abt-tour-hl'));
+        while (abtTourI < ABT_TOUR_STEPS.length && !document.querySelector(ABT_TOUR_STEPS[abtTourI].sel)) { abtTourI++; }
+        if (abtTourI >= ABT_TOUR_STEPS.length) { abtTourEnd(false); return; }
+        const st = ABT_TOUR_STEPS[abtTourI], tgt = document.querySelector(st.sel);
+        const mask = document.getElementById('abtTourMask'), pop = document.getElementById('abtTourPop');
+        mask.style.display = 'block'; pop.style.display = 'block';
+        tgt.classList.add('abt-tour-hl'); tgt.scrollIntoView({ block:'center', behavior:'smooth' });
+        document.getElementById('abtTourStepNum').textContent = (abtTourI + 1) + ' / ' + ABT_TOUR_STEPS.length;
+        document.getElementById('abtTourTitle').textContent = st.title;
+        document.getElementById('abtTourBody').textContent = st.body;
+        document.getElementById('abtTourPrev').style.visibility = abtTourI === 0 ? 'hidden' : 'visible';
+        document.getElementById('abtTourNext').textContent = (abtTourI === ABT_TOUR_STEPS.length - 1) ? '完了' : '次へ';
+        const r = tgt.getBoundingClientRect();
+        let top = r.bottom + 12, left = Math.min(Math.max(10, r.left), window.innerWidth - 312);
+        if (top + 190 > window.innerHeight) { top = Math.max(10, r.top - 196); }
+        pop.style.top = top + 'px'; pop.style.left = left + 'px';
+    }
+    function abtTourNext() { abtTourI++; abtTourShow(); }
+    function abtTourPrev() { if (abtTourI > 0) { abtTourI--; abtTourShow(); } }
+<?php if ($withTour): ?>
+    window.addEventListener('load', function () {
+        let done = false; try { done = localStorage.getItem(ABT_TOUR_KEY) === '1'; } catch (e) {}
+        if (!done && document.querySelector('#btnAddApi')) { setTimeout(abtTourStart, 450); }
+    });
+<?php endif; ?>
+</script>
+<div id="abtTourMask" onclick="abtTourEnd(false)"></div>
+<div id="abtTourPop" role="dialog" aria-modal="true">
+    <h4 id="abtTourTitle"></h4>
+    <div class="tbody" id="abtTourBody"></div>
+    <div class="tfoot">
+        <span class="tstep" id="abtTourStepNum"></span>
+        <button class="btn sm" type="button" id="abtTourPrev" onclick="abtTourPrev()">戻る</button>
+        <button class="primary sm" type="button" id="abtTourNext" onclick="abtTourNext()">次へ</button>
+    </div>
+    <label style="display:flex;align-items:center;gap:6px;margin-top:11px;font-size:12px;color:#64748b"><input type="checkbox" onchange="if(this.checked){abtTourEnd(true);}" style="width:auto"> 今後このガイドを表示しない</label>
+    <div style="margin-top:2px"><button class="link" type="button" onclick="abtTourEnd(false)" style="font-size:12px">スキップ</button></div>
+</div>
+<?php }
+?>
+
+<?php
+/* ================================================================== *
+ *  API 詳細（route=api&id=N）：キー本体＋使用箇所（1キーを複数箇所で管理）
+ * ================================================================== */
+if ($route === 'api'):
+    $aid = (int) ($_GET['id'] ?? 0);
+    $stA = db()->prepare('SELECT * FROM apis WHERE id = :id AND group_id = :gid');
+    $stA->execute([':id' => $aid, ':gid' => $gid]);
+    $api = $stA->fetch();
+    if (!$api) { flash('err', 'APIが見つかりません。'); redirect(app_url()); }
+    $stU = db()->prepare('SELECT * FROM usages WHERE api_id = :aid ORDER BY id');
+    $stU->execute([':aid' => $aid]);
+    $usages = $stU->fetchAll();
+    $costFetchable = cost_supported((string) $api['provider']) && !empty($api['secret_enc']);
+    $aj = $api; unset($aj['secret_enc'], $aj['secret_fp']);
+?>
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><?= h(APP_NAME) ?> — <?= h($api['name']) ?></title>
+<?php render_styles(); ?>
+</head>
+<body>
+<div class="layout">
+<?php render_sidebar('dashboard'); ?>
+<main class="main">
+    <div class="topbar">
+        <a class="btn" href="index.php"><?= icon('left', 15) ?> API一覧</a>
+        <h2 style="display:flex;align-items:center;gap:8px;min-width:0"><?= provider_badge($api['provider'] ?: $api['name'], 30) ?> <span style="overflow:hidden;text-overflow:ellipsis"><?= h($api['name']) ?></span></h2>
+        <span class="grow"></span>
+        <?php if ($editable): ?>
+            <button class="primary" type="button" onclick='openEdit(<?= htmlspecialchars(json_encode($aj, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)'><?= icon('gear', 15) ?> 編集</button>
+            <form method="post" style="display:inline" onsubmit="return abtConfirmForm(this, 'このAPIと、ぶら下がる使用箇所をすべて削除します。よろしいですか？')">
+                <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+                <input type="hidden" name="action" value="delete_api">
+                <input type="hidden" name="id" value="<?= (int) $api['id'] ?>">
+                <button class="danger" type="submit"><?= icon('trash', 15) ?> 削除</button>
+            </form>
+        <?php endif; ?>
+    </div>
+
+    <?php if ($flashMsg): ?><div class="flash <?= h($flashMsg[0]) ?>"><?= nl2br(h($flashMsg[1])) ?></div><?php endif; ?>
+
+    <div class="stat" style="margin-bottom:16px">
+        <div class="abt-kv">
+            <div class="abt-k"><?= icon('lock', 14) ?> APIキー（本体）</div>
+            <div class="abt-v">
+                <div class="keyrow">
+                <?php if (!empty($api['secret_hint'])): ?>
+                    <code class="keyhint" id="khD"><?= h($api['secret_hint']) ?></code>
+                    <?php if ($editable): ?>
+                        <button class="btn sm" type="button" onclick="abtRevealKey('D', this)">表示</button>
+                        <button class="btn sm" type="button" onclick="abtCopyKey(<?= (int) $api['id'] ?>)"><?= icon('copy', 13) ?> コピー</button>
+                    <?php endif; ?>
+                <?php else: ?>
+                    <span class="muted">未登録<?= $editable ? '（「編集」からキーを保存できます）' : '' ?></span>
+                <?php endif; ?>
+                </div>
+            </div>
+            <div class="abt-k">鍵の在りか</div>
+            <div class="abt-v"><?= $api['key_location'] !== '' ? '<code>' . h($api['key_location']) . '</code>' : '<span class="muted">—</span>' ?></div>
+            <div class="abt-k">月額</div>
+            <div class="abt-v">
+                <?php if ($api['monthly_cost'] !== null): ?><strong><?= h($api['currency']) ?> <?= number_format((float) $api['monthly_cost'], (fmod((float) $api['monthly_cost'], 1.0) === 0.0) ? 0 : 2) ?></strong><?php else: ?><span class="muted">未設定</span><?php endif; ?>
+                <?php if ($editable && $costFetchable): ?>
+                    <form method="post" style="display:inline;margin-left:8px"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="fetch_cost"><input type="hidden" name="id" value="<?= (int) $api['id'] ?>"><button class="btn sm" type="submit"><?= icon('refresh', 13) ?> 自動取得</button></form>
+                <?php endif; ?>
+            </div>
+            <div class="abt-k">状態</div>
+            <div class="abt-v"><span class="sbadge s-<?= h($api['status']) ?>"><?= h(STATUSES[$api['status']] ?? $api['status']) ?></span></div>
+            <div class="abt-k">担当</div>
+            <div class="abt-v"><?= $api['owner'] !== '' ? h($api['owner']) : '<span class="muted">—</span>' ?></div>
+            <?php if ($api['url'] !== ''): ?><div class="abt-k">コンソール / URL</div><div class="abt-v"><a href="<?= h($api['url']) ?>" target="_blank" rel="noopener"><?= h($api['url']) ?></a></div><?php endif; ?>
+            <?php if ($api['notes'] !== ''): ?><div class="abt-k">メモ</div><div class="abt-v"><?= nl2br(h($api['notes'])) ?></div><?php endif; ?>
+        </div>
+    </div>
+
+    <h3 style="margin:18px 0 4px;display:flex;align-items:center;gap:6px"><?= icon('globe', 16) ?> このキーを使っている場所（<?= count($usages) ?>）</h3>
+    <p class="hint" style="margin:0 0 12px">1つのキーを複数の場所で使っていても、ここに全部ぶら下げられます。差し替え時の影響範囲がひと目で分かります。</p>
+    <div class="table-wrap">
+    <table>
+        <thead><tr><th>場所の名前</th><th>URL / パス</th><th>メモ</th><?php if ($editable): ?><th style="width:54px"></th><?php endif; ?></tr></thead>
+        <tbody>
+        <?php if (!$usages): ?>
+            <tr><td colspan="<?= $editable ? 4 : 3 ?>" class="muted" style="text-align:center;padding:18px">まだ登録がありません。<?= $editable ? '下のフォームから追加してください。' : '' ?></td></tr>
+        <?php else: foreach ($usages as $u): ?>
+            <tr>
+                <td><?= $u['repo'] !== '' ? h($u['repo']) : '<span class="muted">—</span>' ?></td>
+                <td><?php if ($u['file'] !== ''): ?><?php if (preg_match('#^https?://#i', (string) $u['file'])): ?><a href="<?= h($u['file']) ?>" target="_blank" rel="noopener"><?= h($u['file']) ?></a><?php else: ?><code><?= h($u['file']) ?></code><?php endif; ?><?php else: ?><span class="muted">—</span><?php endif; ?></td>
+                <td><?= $u['snippet'] !== '' ? h($u['snippet']) : '<span class="muted">—</span>' ?></td>
+                <?php if ($editable): ?><td><form method="post" onsubmit="return abtConfirmForm(this, 'この使用箇所を削除しますか？')"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="delete_usage"><input type="hidden" name="id" value="<?= (int) $u['id'] ?>"><button class="link" type="submit" title="削除" style="color:#b42318"><?= icon('trash', 15) ?></button></form></td><?php endif; ?>
+            </tr>
+        <?php endforeach; endif; ?>
+        </tbody>
+    </table>
+    </div>
+
+    <?php if ($editable): ?>
+    <form method="post" class="stat" style="margin-top:14px">
+        <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+        <input type="hidden" name="action" value="add_usage">
+        <input type="hidden" name="api_id" value="<?= (int) $api['id'] ?>">
+        <strong style="display:flex;align-items:center;gap:6px;margin-bottom:10px"><?= icon('plus', 15) ?> 使用箇所を追加</strong>
+        <div class="grid">
+            <div class="field"><label>場所の名前</label><input name="repo" placeholder="例: コーポレートサイト / 社内bot"></div>
+            <div class="field"><label>URL / パス（任意）</label><input name="file" placeholder="例: https://example.com/contact"></div>
+            <div class="field full"><label>メモ（任意）</label><input name="snippet" placeholder="例: 問い合わせフォームの送信通知に使用"></div>
+        </div>
+        <div style="margin-top:10px"><button class="primary" type="submit">追加</button></div>
+    </form>
+    <?php endif; ?>
+</main>
+</div>
+<?php render_modals($csrf, $names, $credentials); ?>
+<?php abt_front_assets($csrf, false); ?>
+</body>
+</html>
+<?php exit; endif; ?>
+
+<?php
+/* ================================================================== *
+ *  既定ページ：API一覧（誰でも使える入口）
+ * ================================================================== */
+$stList = db()->prepare('SELECT * FROM apis WHERE group_id = :gid ORDER BY name COLLATE NOCASE, id');
+$stList->execute([':gid' => $gid]);
+$apisAll = $stList->fetchAll();
+$ucnt = [];
+$stCnt = db()->prepare('SELECT api_id, COUNT(*) c FROM usages WHERE api_id IN (SELECT id FROM apis WHERE group_id = :gid) GROUP BY api_id');
+$stCnt->execute([':gid' => $gid]);
+foreach ($stCnt->fetchAll() as $r) { $ucnt[(int) $r['api_id']] = (int) $r['c']; }
+if ($q !== '') {
+    $needle = mb_strtolower($q);
+    $apisAll = array_values(array_filter($apisAll, static function ($a) use ($needle) {
+        return mb_strpos(mb_strtolower(implode(' ', [$a['name'], $a['provider'], $a['site'], $a['key_location'], $a['owner'], $a['notes']])), $needle) !== false;
+    }));
+}
+?>
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><?= h(APP_NAME) ?> — API一覧 — <?= h($group['name']) ?></title>
+<?php render_styles(); ?>
+</head>
+<body>
+<div class="layout">
+<?php render_sidebar('dashboard'); ?>
+<main class="main">
+    <div class="topbar">
+        <h2 style="display:flex;align-items:center;gap:8px"><?= icon('key', 20) ?> API一覧</h2>
+        <span class="grow"></span>
+        <button class="btn" type="button" onclick="abtTourStart()"><?= icon('help', 15) ?> 使い方</button>
+        <?php if ($editable): ?><button class="primary" type="button" id="btnAddApi" onclick="openCreate()"><?= icon('plus', 15) ?> APIを追加</button><?php endif; ?>
+        <?php if (count($memberships) > 1): ?>
+            <select onchange="if(this.value)location.href=this.value">
+                <?php foreach ($memberships as $m): ?>
+                    <option value="<?= h(app_url('switchgroup', ['gid' => (int) $m['id']])) ?>" <?= (int) $m['id'] === $gid ? 'selected' : '' ?>><?= h($m['name']) ?>（<?= h(ROLES[$m['role']] ?? $m['role']) ?>）</option>
+                <?php endforeach; ?>
+            </select>
+        <?php else: ?><span class="muted"><?= h($group['name']) ?></span><?php endif; ?>
+    </div>
+
+    <?php if ($flashMsg): ?><div class="flash <?= h($flashMsg[0]) ?>"><?= nl2br(h($flashMsg[1])) ?></div><?php endif; ?>
+    <?php if (!$editable): ?><div class="flash" style="background:#eef4ff;color:#1d4ed8">あなたは <strong>閲覧者</strong> です。閲覧のみ可能です。</div><?php endif; ?>
+    <?php if ($editable && !encryption_ready()): ?><div class="flash" style="background:#fff4e0;color:#92400e"><?= icon('lock', 15) ?> APIキー本体を保存するには <code>config.local.php</code> に <code>APP_ENCRYPTION_KEY</code> を設定してください（未設定でも在りか・メモ・使用箇所は使えます）。</div><?php endif; ?>
+
+    <form method="get" class="abt-search" style="margin-bottom:16px">
+        <input type="search" name="q" value="<?= h($q) ?>" placeholder="API名・提供元・キーの在りか・メモで検索">
+        <button class="btn" type="submit"><?= icon('search', 15) ?> 検索</button>
+        <?php if ($q !== ''): ?><a class="btn" href="index.php">クリア</a><?php endif; ?>
+    </form>
+
+    <?php if (!$apisAll): ?>
+        <div class="empty">
+            <div class="duck-hero" style="margin-bottom:10px"><img class="duckimg" src="<?= h(app_base_url()) ?>/duck2.png" alt="" style="width:96px"></div>
+            <?php if ($q !== ''): ?>「<?= h($q) ?>」に一致するAPIはありません。<?php else: ?>まだAPIが登録されていません。<?= $editable ? '右上の「APIを追加」から始めましょう。' : '' ?><?php endif; ?>
+        </div>
+    <?php else: ?>
+    <div class="card-grid" id="apiGrid">
+        <?php foreach ($apisAll as $a): $aid = (int) $a['id']; $n = $ucnt[$aid] ?? 0; $aj = $a; unset($aj['secret_enc'], $aj['secret_fp']); ?>
+        <div class="pcard apicard">
+            <div class="pcard-top">
+                <?= provider_badge($a['provider'] ?: $a['name'], 40) ?>
+                <div style="min-width:0">
+                    <div class="pcard-name"><?= h($a['name']) ?></div>
+                    <?php if ($a['provider'] !== ''): ?><div class="pcard-prov muted"><?= h($a['provider']) ?></div><?php endif; ?>
+                </div>
+            </div>
+            <div class="keyrow">
+                <?php if (!empty($a['secret_hint'])): ?>
+                    <code class="keyhint" id="kh<?= $aid ?>"><?= h($a['secret_hint']) ?></code>
+                    <?php if ($editable): ?>
+                        <button class="btn sm" type="button" onclick="abtRevealKey(<?= $aid ?>, this)">表示</button>
+                        <button class="btn sm" type="button" onclick="abtCopyKey(<?= $aid ?>)"><?= icon('copy', 13) ?> コピー</button>
+                    <?php endif; ?>
+                <?php else: ?>
+                    <span class="muted" style="font-size:13px"><?= icon('lock', 13) ?> キー未登録</span>
+                <?php endif; ?>
+            </div>
+            <div class="apicard-meta">
+                <?php if ($a['monthly_cost'] !== null): ?><span><?= h($a['currency']) ?> <?= number_format((float) $a['monthly_cost'], (fmod((float) $a['monthly_cost'], 1.0) === 0.0) ? 0 : 2) ?>/月</span><?php endif; ?>
+                <span class="sbadge s-<?= h($a['status']) ?>"><?= h(STATUSES[$a['status']] ?? $a['status']) ?></span>
+            </div>
+            <div class="apicard-foot">
+                <a class="usagelink" href="<?= h(app_url('api', ['id' => $aid])) ?>"><?= icon('globe', 14) ?> 使用箇所 <?= $n ?>か所</a>
+                <span class="grow"></span>
+                <a class="btn sm" href="<?= h(app_url('api', ['id' => $aid])) ?>">詳細</a>
+                <?php if ($editable): ?><button class="btn sm" type="button" onclick='openEdit(<?= htmlspecialchars(json_encode($aj, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_UNESCAPED_UNICODE), ENT_QUOTES) ?>)'>編集</button><?php endif; ?>
+            </div>
+        </div>
+        <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
+</main>
+</div>
+<?php render_modals($csrf, $names, $credentials); ?>
+<?php abt_front_assets($csrf, true); ?>
 </body>
 </html>
