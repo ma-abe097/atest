@@ -1,39 +1,45 @@
 # API番人さん (api_banto_san)
 
-API棚卸しツール。外部API（Stripe / OpenAI / Google Maps 等）を「どこで使い・いくらかかるか」
-コスト軸で一元管理する、**Googleログイン + グループ権限**つきダッシュボード。
+APIキーの棚卸し・共有ツール。外部API（OpenAI / Stripe / Google Maps 等）の
+**キー本体・使用箇所・コスト**を、**Googleログイン + グループ権限**つきのダッシュボードで一元管理します。
 heteml 等の素の PHP 共有ホスティングで単体動作する（外部ライブラリ・Composer 不要）。
 
 ## 機能
 
 - **Googleログイン**（OAuth 2.0 / OpenID Connect）。パスワードは保持しない。
-- **グループによるデータ分離**。APIカタログは必ずいずれかのグループに属し、
-  所属グループのカタログのみ閲覧・編集できる（**サーバ側で必ず権限チェック**）。
+- **グループによるデータ分離**。APIは必ずいずれかのグループに属し、所属グループのものだけ閲覧・編集できる
+  （**サーバ側で必ず権限チェック**）。
 - **ロール**（owner / admin / member / viewer）。
 
-  | ロール | カタログ閲覧 | カタログ編集 | メンバー/ロール管理 | グループ削除 |
+  | ロール | 閲覧 | 編集 | メンバー/ロール管理 | グループ削除 |
   |--------|:----:|:----:|:----:|:----:|
   | owner  | ✓ | ✓ | ✓ | ✓ |
   | admin  | ✓ | ✓ | ✓ | - |
   | member | ✓ | ✓ | - | - |
   | viewer | ✓ | - | - | - |
 
-- **メール招待**: 招待されたメールアドレスで Google ログインすると自動で参加。
-- **コスト軸ビュー**: 月額降順 / 通貨別小計 / 未設定の明示 / 使用箇所ドリルダウン / 絞り込み。
-- **制約**: APIキー本体は保存せず、鍵の在りか（`env: OPENAI_API_KEY` 等）のみ記録。
+- **API一覧（フロント画面）**: 各APIをカードで一覧。1つのフォームに
+  「名前・提供元・**APIキー本体**・鍵の在りか・月額・状態・担当・メモ」をまとめて登録できる。入力箇所が散らばらない。
+- **APIキーの保管庫**: キー本体を **AES-256-GCM で暗号化**して保存。一覧・詳細から「表示」「コピー」。
+- **使用箇所（1キー → 複数箇所）**: 各APIに「場所の名前・URL・メモ」を**手動で何個でも**登録。
+  1つのキーを複数の場所で使っていても、差し替え時の影響範囲がひと目で分かる。
+- **使い方ガイド（ツアー）**: 初回に自動表示される吹き出しツアー。`次へ / 戻る / スキップ / 今後表示しない`
+  （ブラウザに記憶）に対応。ヘッダの「使い方」からいつでも再表示。
+- **コスト軸ビュー**（左メニュー「コスト」）: 月額合計 / 通貨別小計 / プロダクト別ドーナツ / 前月比。
+  OpenAI / Anthropic / Twilio / DataForSEO / Vonage / SerpApi / Google Cloud(BigQuery) は
+  「コスト取得キー」を登録すると月額をAPI連携で**自動取得**できる。
+- **ID/パスワード管理**: 共有の「アカウント管理」と、本人だけが見られる「個人アカウント」。パスワードは暗号化保存。
+- **キーの取得ガイド**: プロバイダごとの「必要なもの・取得場所」。
 
 ## ファイル構成
 
 | ファイル | 役割 |
 |----------|------|
-| `index.php`      | ダッシュボード本体 + 認証ルーティング |
+| `index.php`      | API一覧 / API詳細 / コスト / 管理 / アカウント等の各画面 + 認証ルーティング |
 | `groups.php`     | グループ作成・メンバー招待・ロール変更・削除 |
-| `bootstrap.php`  | 設定 / DB / セッション / 認証・認可 / Google OAuth |
-| `api.php`        | スキャナCLI 用 Push API エンドポイント |
-| `scan.php`       | スキャナ CLI（走査 + push） |
-| `lib/scanner.php`| 検出エンジン（SDK/URL/env 検出・伏字化） |
-| `scanner/providers.json` | プロバイダ定義（追記で拡張可） |
+| `bootstrap.php`  | 設定 / DB / セッション / 認証・認可 / 暗号化 / コスト取得 / Google OAuth |
 | `config.local.php.example` | 設定ファイルのサンプル |
+| `logo.svg` / `favicon.svg` / `duck.svg` / `duck2.png` | ロゴ・マスコット素材 |
 | `data.sqlite`    | SQLite データベース（自動生成・gitignore済み） |
 
 ## セットアップ
@@ -59,9 +65,16 @@ return [
     'GOOGLE_CLIENT_SECRET' => '...',
     'GOOGLE_REDIRECT_URI'  => 'https://<ドメイン>/atest/api_banto_san/index.php?route=oauth2callback',
     'APP_BASE_URL'         => 'https://<ドメイン>/atest/api_banto_san', // 任意（未指定なら自動推定）
+    // APIキー本体・パスワードを暗号化保存するためのマスター鍵（base64の32バイト）。
+    //   php -r "echo base64_encode(random_bytes(32)).PHP_EOL;"
+    // ★この鍵を変更・紛失すると保存済みキーは復号できなくなります。大切に保管を。
+    'APP_ENCRYPTION_KEY'   => '...',
     'APP_DEV_LOGIN'        => false, // 本番は必ず false
 ];
 ```
+
+> 🔒 `APP_ENCRYPTION_KEY` を設定するとキー本体・パスワードを暗号化保存できます。
+> 未設定でも「鍵の在りか・メモ・使用箇所・コスト」は使えますが、キー本体の保存はできません。
 
 ### 3. 動作要件
 
@@ -74,47 +87,16 @@ Google なしで UI・権限ロジックを確認したい場合は `APP_DEV_LOG
 
 ```bash
 cd api_banto_san
-APP_DEV_LOGIN=1 php -S 127.0.0.1:8000
+APP_DEV_LOGIN=1 APP_ENCRYPTION_KEY="$(php -r 'echo base64_encode(random_bytes(32));')" php -S 127.0.0.1:8000
 # ブラウザで http://127.0.0.1:8000/ → メールアドレスで（DEV）ログイン
 ```
 
 > ⚠ `APP_DEV_LOGIN` は認証を回避する開発専用機能です。本番では必ず無効化してください。
 
-## スキャナ（API使用箇所の自動検出・§6）
+## 使い方の流れ
 
-ソースを走査して外部APIの使用箇所（SDKインポート / ベースURL / 環境変数名）を自動検出し、
-グループのカタログへ反映します。検出時、**手動入力した `monthly_cost` / `notes` / `status` /
-`owner` などは上書きされません**（自動フィールドの `usages` / `detected_by` / `last_scanned` のみ更新）。
-スニペット中のキー本体らしき文字列は保存前に伏字化します（キー本体は保存しない）。
-プロバイダ定義は `scanner/providers.json` に分離してあり、追記で対応プロバイダを増やせます。
-
-使い方は2通り:
-
-### A. アプリ内スキャン（SSH不要・推奨）
-ヘッダの「スキャン」（**admin 以上**）から、heteml 上のディレクトリ（絶対パス）を指定して実行。
-アプリ自身がそのフォルダを走査してカタログへ反映します。
-- 任意で環境変数 `SCAN_ALLOWED_ROOT` を設定すると、その配下のみスキャン可能に制限できます。
-
-### B. スキャナCLI + Push API（分離構成）
-SSH やローカルPCで `scan.php`（PHP・依存なし）を実行し、個人用トークンで Push API へ送信:
-
-```bash
-# 1. Web UI の「トークン」画面で個人用トークンを発行
-export APICATALOG_TOKEN="abt_xxxxx"
-
-# 2. 走査して送信（コスト金額は取得しません。Web UIで手動入力）
-php scan.php --path /path/to/site --push \
-  --endpoint https://<ドメイン>/atest/api_banto_san/api.php \
-  --group <group_id>
-
-# 送信せず検出結果だけ見る / 保存する
-php scan.php --path /path/to/site
-php scan.php --path /path/to/site --out result.json
-```
-
-Push API: `POST /api.php?action=push&group=<id>`、ヘッダ `Authorization: Bearer <token>`、
-ボディ `{"apis":[...]}`。トークン所有者がそのグループで member 以上であることをサーバ側で検証します。
-
-## 将来フェーズ（未実装）
-
-- 各社 billing/usage API 連携による `monthly_cost` の半自動更新（Stripe / OpenAI / AWS Cost Explorer 等・§9 v3）
+1. **API一覧**（トップ）で「＋ APIを追加」。名前・提供元・**キー本体**などを1つのフォームで登録。
+2. 一覧のカードからキーを「表示」「コピー」。「詳細」を開く。
+3. **詳細画面**で、そのキーを使っている場所（**複数可**）を「場所の名前・URL・メモ」で追加。
+4. 月額やグラフを見たいときは左メニューの **コスト**。コスト自動取得は「コスト取得キー」を登録。
+5. 迷ったらヘッダの **使い方** で吹き出しガイドを再生。
