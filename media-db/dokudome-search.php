@@ -122,26 +122,36 @@ if ($r['status'] !== 200) {
 
 // 候補URL（引用優先）→ 妥当ドメイン＆非除外だけに絞る（ドメイン単位で1つ）
 $candidates = dd_collect_urls($json);
-$filtered   = [];
+$validHosts = [];   // 妥当ドメインかつ非除外（host => url）
+$excluded   = [];   // 除外された host（理由表示用）
 foreach ($candidates as $u) {
     $host = dd_host($u);
     if ($host === '' || !dd_valid_domain($host)) {
         continue;
     }
     if (dd_is_excluded($host, $domSet, $kwSet)) {
+        $excluded[$host] = true;
         continue;
     }
-    if (!isset($filtered[$host])) {
-        $filtered[$host] = $u;
+    if (!isset($validHosts[$host])) {
+        $validHosts[$host] = $u;
     }
 }
 
 // 実際にアクセスできるものだけ残し、先頭を公式サイトとみなす（ページタイトルも取得）
-$reachable = dd_filter_reachable(array_values($filtered));
+$reachable = dd_filter_reachable(array_values($validHosts));
 $official  = $reachable[0] ?? null;
 
 if ($official === null) {
-    dd_out(200, ['found' => false, 'pageUrl' => '', 'topUrl' => '', 'domain' => '', 'evidence' => '', 'note' => '独自ドメインは見つかりませんでした（空白）。']);
+    // 空白になった理由を分かりやすく返す（診断用）
+    if (count($validHosts) === 0 && count($excluded) === 0) {
+        $reason = '検索で候補ページが見つかりませんでした（社名・電話番号を変えて再検索すると見つかることがあります）。';
+    } elseif (count($validHosts) === 0) {
+        $reason = '候補は見つかりましたが、すべて除外対象でした（SNS/予約/求人/無料HP/除外リスト等）：' . implode(', ', array_slice(array_keys($excluded), 0, 5));
+    } else {
+        $reason = '候補（' . implode(', ', array_slice(array_keys($validHosts), 0, 5)) . '）はありましたが、アクセス確認に失敗しました。';
+    }
+    dd_out(200, ['found' => false, 'pageUrl' => '', 'topUrl' => '', 'domain' => '', 'evidence' => $reason, 'note' => $reason]);
 }
 $officialUrl = $official['url'];
 $scheme   = parse_url($officialUrl, PHP_URL_SCHEME) ?: 'https';
