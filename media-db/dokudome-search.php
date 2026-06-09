@@ -219,8 +219,11 @@ function dd_builtin_domains(): array
         'stores.jp', 'myshopify.com', 'sakura.ne.jp', 'so-net.ne.jp', 'ocn.ne.jp',
         'coocan.jp', 'plala.or.jp', 'biglobe.ne.jp', 'xmbs.jp', 'jbplt.jp', 'main.jp',
         'sub.jp', 'client.jp', 'skr.jp', 'ftw.jp', 'crayonsite.com', 'webcrow.jp',
-        // 企業情報DB
+        // 企業情報DB・各種ポータル（独自ドメインではない）
         'baseconnect.in', 'salesnow.jp', 'houjin.jp', 'alarmbox.jp', 'mapfan.com',
+        'g-search.or.jp', 'maisuma.jp', 'he8.net',
+        // 不動産ポータル
+        'suumo.jp', 'homes.co.jp', 'athome.co.jp', 'chintai.net', 'ielove.co.jp',
     ];
 }
 
