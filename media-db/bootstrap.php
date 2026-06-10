@@ -368,6 +368,12 @@ function mdb_is_admin_email(string $email): bool
     return in_array(strtolower(trim($email)), mdb_admin_emails(), true);
 }
 
+/** オーナー（ロックアウト防止のため常に管理者を維持する代表アカウント）か */
+function mdb_is_owner_email(string $email): bool
+{
+    return strtolower(trim($email)) === 'a.yasugi@sk-t.com';
+}
+
 /** 簡易HTTP（curl優先）。戻り値: ['status'=>int,'body'=>string,'error'=>string] */
 function mdb_http(string $method, string $url, array $headers = [], ?string $body = null): array
 {
@@ -476,7 +482,9 @@ function login_with_google(array $info): array
     foreach ($data['users'] as $i => $u) {
         if (strtolower((string) ($u['email'] ?? '')) === $email) { $idx = $i; break; }
     }
-    $isAdmin = mdb_is_admin_email($email);
+    // 初ログインは原則「閲覧のみ(member)」。オーナー(a.yasugi)だけ管理者で起動し、
+    // 以降の権限は管理者がアカウント管理画面で指定する（ログインでは上書きしない）。
+    $isOwner = mdb_is_owner_email($email);
     if ($idx === null) {
         $user = [
             'id'      => 'u' . time() . random_int(100, 999),
@@ -485,7 +493,7 @@ function login_with_google(array $info): array
             'password' => '',          // Googleログイン専用（パスワードなし）
             'email'   => $email,
             'auth'    => 'google',
-            'role'    => $isAdmin ? 'admin' : 'member',
+            'role'    => $isOwner ? 'admin' : 'member',   // 新規ユーザーは閲覧者（オーナーのみ管理者）
         ];
         $data['users'][] = $user;
         save_data($data);
@@ -498,8 +506,9 @@ function login_with_google(array $info): array
             $user['name'] = $info['name'];
             $changed = true;
         }
-        // 管理者メールなら管理者へ昇格（既に管理者ならそのまま）
-        if ($isAdmin && ($user['role'] ?? '') !== 'admin') {
+        // 既存ユーザーの権限はログインで上書きしない（管理者がUIで設定した値を尊重）。
+        // オーナー(a.yasugi)だけはロックアウト防止のため常に管理者へ戻す。
+        if ($isOwner && ($user['role'] ?? '') !== 'admin') {
             $data['users'][$idx]['role'] = 'admin';
             $user['role'] = 'admin';
             $changed = true;
