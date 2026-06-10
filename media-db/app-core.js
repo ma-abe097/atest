@@ -111,10 +111,11 @@
             return;
         }
         const esc = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
-        let csv = 'シリアル,顧客名,業界,受注日,住所,他利用媒体\n';
+        let csv = 'シリアル,顧客名,業界,受注日,住所,他媒体（AI発見）\n';
         clientsToExport.forEach(client => {
-            const mediaNames = getMediaDetails(client.usedMediaIds).map(m => m.name).join(' / ');
-            csv += [client.serial || '', client.name, client.industry, client.orderDate, client.address, mediaNames].map(esc).join(',') + '\n';
+            // AIが見つけた他媒体のドメイン（重複除去・不正ドメイン除外）
+            const domains = [...new Set((client.foundMedia || []).map(m => m.domain).filter(isValidDomain))].join(' / ');
+            csv += [client.serial || '', client.name, client.industry, client.orderDate, client.address, domains].map(esc).join(',') + '\n';
         });
         const bom = new Uint8Array([0xEF, 0xBB, 0xBF]); // Excelの文字化け対策
         const blob = new Blob([bom, csv], { type: 'text/csv;charset=utf-8;' });

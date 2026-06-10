@@ -69,6 +69,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     ]);
 
     if ($ok) {
+        mdb_log('データ保存', '顧客' . count($body['clients'] ?? []) . '件・媒体' . count($body['media'] ?? []) . '件・除外' . count($excludeDomains) . '件' . (is_admin() ? '・アカウント' . count($users) . '件' : ''));
         json_out(200, ['status' => 'success']);
     }
     json_out(500, ['error' => 'save_failed', 'message' => 'ファイル保存に失敗しました。']);

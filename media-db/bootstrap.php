@@ -243,17 +243,58 @@ function do_login(array $user): void
 {
     session_regenerate_id(true);
     $_SESSION['mdb_user_id'] = $user['id'];
+    mdb_log('ログイン', (($user['auth'] ?? '') === 'google' ? 'Google' : 'ID/パスワード') . 'でログイン', $user);
 }
 
 /** ログアウト */
 function do_logout(): void
 {
+    mdb_log('ログアウト');   // セッション破棄前に記録
     $_SESSION = [];
     if (ini_get('session.use_cookies')) {
         $p = session_get_cookie_params();
         setcookie(session_name(), '', time() - 42000, $p['path'], $p['domain'], $p['secure'], $p['httponly']);
     }
     session_destroy();
+}
+
+/* ------------------------------------------------------------------ *
+ *  操作ログ（誰が・いつ・何をしたか）。activity.log に「1行1JSON」で追記。
+ *  直アクセスは .htaccess で禁止し、Git にも含めない（個人情報のため）。
+ * ------------------------------------------------------------------ */
+/** ログを1行追記する。$actor 省略時は現在のログインユーザー。 */
+function mdb_log(string $action, string $detail = '', ?array $actor = null): void
+{
+    $u = $actor ?? current_user();
+    $entry = [
+        't'       => date('Y-m-d H:i:s'),
+        'user'    => $u['name'] ?? '(未ログイン)',
+        'loginId' => $u['loginId'] ?? '',
+        'role'    => $u['role'] ?? '',
+        'action'  => $action,
+        'detail'  => $detail,
+        'ip'      => $_SERVER['HTTP_X_FORWARDED_FOR'] ?? ($_SERVER['REMOTE_ADDR'] ?? ''),
+    ];
+    @file_put_contents(__DIR__ . '/activity.log', json_encode($entry, JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND | LOCK_EX);
+}
+
+/** ログを新しい順に読み込む（$limit>0 でその件数だけ。0で全件）。 */
+function mdb_read_log(int $limit = 0): array
+{
+    $f = __DIR__ . '/activity.log';
+    if (!is_file($f)) {
+        return [];
+    }
+    $lines = file($f, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [];
+    $rows = [];
+    foreach ($lines as $ln) {
+        $e = json_decode($ln, true);
+        if (is_array($e)) {
+            $rows[] = $e;
+        }
+    }
+    $rows = array_reverse($rows);
+    return $limit > 0 ? array_slice($rows, 0, $limit) : $rows;
 }
 
 /* ------------------------------------------------------------------ *
@@ -484,5 +525,6 @@ function nav_items(): array
         'flag-search' => ['フラグ(媒体)別検索',    'filter',           'flag-search.php'],
         'dokudome'    => ['独ドメげっと',          'globe',            'dokudome.php'],
         'accounts'    => ['アカウント管理',        'users',            'accounts.php'],
+        'settings'    => ['設定・ログ',            'shield',           'settings.php'],
     ];
 }

@@ -58,6 +58,7 @@ if (!isset($data))       { $data = load_data(); }
 
             <nav class="flex-1 p-4 space-y-2 overflow-y-auto">
                 <?php foreach (nav_items() as $key => [$label, $icon, $href]): ?>
+                    <?php if ($key === 'settings' && !is_admin()) { continue; } ?>
                     <a href="<?= h($href) ?>"
                        class="flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors <?= $currentNav === $key ? 'bg-blue-600 text-white font-medium' : 'text-gray-400 hover:bg-gray-800 hover:text-white' ?>">
                         <i data-lucide="<?= h($icon) ?>" class="w-5 h-5"></i>
