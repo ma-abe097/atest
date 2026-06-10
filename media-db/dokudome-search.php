@@ -143,6 +143,7 @@ foreach ($candidates as $u) {
 // 実際にアクセスできるものだけ残し、先頭を公式サイトとみなす（ページタイトルも取得）
 $reachable = dd_filter_reachable(array_values($validHosts));
 $official  = $reachable[0] ?? null;
+mdb_log('独ドメ検索(API)', ($name !== '' ? $name : $phone) . ' → ' . ($official ? dd_host($official['url']) : '（なし）'));
 
 if ($official === null) {
     // 空白になった理由を分かりやすく返す（診断用）

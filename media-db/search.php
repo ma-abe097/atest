@@ -160,6 +160,7 @@ if (count($found) === 0) {
 }
 $data['clients'][$idx] = $client;
 save_data($data);
+mdb_log('他媒体検索(API)', $name . '（' . count($found) . '件）');
 
 search_out(200, [
     'status'     => 'success',
