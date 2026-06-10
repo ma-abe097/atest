@@ -82,10 +82,10 @@ require __DIR__ . '/layout_top.php';
                     </span>
                 </template>
             </div>
-            <p class="text-xs text-gray-400 mt-2">※ 有料APIを使用します（管理者のみ）。中止しても、あとで「再開」で続きから調べられます。</p>
+            <p class="text-xs text-gray-400 mt-2">※ 有料APIを使用します（管理者・API利用可の方のみ）。中止しても、あとで「再開」で続きから調べられます。</p>
         </div>
         <?php else: ?>
-        <p v-if="companies.length" class="mt-4 text-sm text-gray-500 bg-gray-50 border border-gray-200 rounded px-3 py-2">検索は管理者のみ実行できます（閲覧は可能）。</p>
+        <p v-if="companies.length" class="mt-4 text-sm text-gray-500 bg-gray-50 border border-gray-200 rounded px-3 py-2">この検索は権限のある方（管理者・API利用可）のみ実行できます（閲覧は可能）。</p>
         <?php endif; ?>
     </div>
 
@@ -106,7 +106,7 @@ require __DIR__ . '/layout_top.php';
                 {{ searching ? '調べています…' : '独自ドメインを調べる' }}
             </button>
             <?php else: ?>
-            <span class="text-sm text-gray-500 bg-gray-50 border border-gray-200 rounded px-3 py-2">検索は管理者のみ実行できます（閲覧は可能）。</span>
+            <span class="text-sm text-gray-500 bg-gray-50 border border-gray-200 rounded px-3 py-2">この検索は権限のある方（管理者・API利用可）のみ実行できます（閲覧は可能）。</span>
             <?php endif; ?>
         </div>
     </div>
