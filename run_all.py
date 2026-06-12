@@ -324,37 +324,16 @@ def import_csv(path):
     banner("STEP3: サイトへ取り込み")
     log(f"取り込むCSV: {path}", 1)
 
-    s = make_session()
-    mode_proxy = PROXY or ("PAC自動" if USE_PAC else "") or (urllib.request.getproxies() or "なし(直結)")
-    log(f"接続設定: プロキシ={mode_proxy} / IPv4強制={FORCE_IPV4} / 証明書検証={VERIFY_SSL}", 1)
+    s, csrf = connect_and_login()
 
-    # [1/5] ログイン画面で CSRF とセッションCookieを取得
-    log("[1/5] ログイン画面を取得: GET /index.php", 1)
-    r = s.get(f"{BASE}/index.php", timeout=15); r.raise_for_status()
-    m = re.search(r'name="csrf"\s+value="([^"]+)"', r.text)
-    if not m:
-        raise SystemExit("❌ CSRFトークンが取得できません。BASE を確認してください。")
-    csrf = m.group(1)
-    log(f"✓ CSRFトークン取得（{csrf[:10]}…）/ Cookie取得", 2)
-
-    # [2/5] ID/パスワードでログイン
-    log(f"[2/5] ログイン: POST /index.php（loginId={LOGIN_ID}）", 1)
-    r = s.post(f"{BASE}/index.php",
-               data={"csrf": csrf, "loginId": LOGIN_ID, "password": PASSWORD}, timeout=15)
-    r.raise_for_status()
-    if "action=logout" not in r.text:
-        raise SystemExit("❌ ログイン失敗。LOGIN_ID/PASSWORD とアカウント管理の内容を確認してください。")
-    log("✓ ログイン成功", 2)
-
-    # [3/5] 現在のデータ取得
-    log("[3/5] 現在データ取得: GET /api.php", 1)
+    log("現在データ取得: GET /api.php", 1)
     data = s.get(f"{BASE}/api.php", timeout=15).json()
     media, clients = data.get("media", []), data.get("clients", [])
     before = len(clients)
     log(f"✓ 既存: 顧客 {before}件 / 媒体 {len(media)}件", 2)
 
     # [4/5] CSV解析 → 顧客化
-    log(f"[4/5] CSV解析: {os.path.basename(path)}", 1)
+    log(f"CSV解析: {os.path.basename(path)}", 1)
     rows, enc = read_csv_rows(path)
     log(f"✓ エンコーディング: {enc} / {len(rows)}行 読み込み", 2)
 
@@ -388,7 +367,7 @@ def import_csv(path):
         raise SystemExit("❌ 有効なデータがありません。CSVの列順を確認してください。")
 
     # [5/5] 保存
-    log(f"[5/5] 保存: POST /api.php（顧客 {len(clients)}件・媒体 {len(media)}件）", 1)
+    log(f"保存: POST /api.php（顧客 {len(clients)}件・媒体 {len(media)}件）", 1)
     payload = {"users": data.get("users", []), "media": media, "clients": clients,
                "excludeDomains": data.get("excludeDomains", []), "csrf": csrf}
     r = s.post(f"{BASE}/api.php", json=payload, headers={"X-CSRF-Token": csrf}, timeout=30)
@@ -400,16 +379,111 @@ def import_csv(path):
 
 
 # ----------------------------------------------------------------------
+# 認証 & 他媒体検索（dashboard / flag-search 共通の「未取得をまとめて検索」）
+# ----------------------------------------------------------------------
+def connect_and_login():
+    """セッションを作りログインして (session, csrf) を返す。"""
+    s = make_session()
+    mode_proxy = PROXY or ("PAC自動" if USE_PAC else "") or (urllib.request.getproxies() or "なし(直結)")
+    log(f"接続設定: プロキシ={mode_proxy} / IPv4強制={FORCE_IPV4} / 証明書検証={VERIFY_SSL}", 1)
+    log("ログイン画面を取得: GET /index.php", 1)
+    r = s.get(f"{BASE}/index.php", timeout=15); r.raise_for_status()
+    m = re.search(r'name="csrf"\s+value="([^"]+)"', r.text)
+    if not m:
+        raise SystemExit("❌ CSRFトークンが取得できません。BASE を確認してください。")
+    csrf = m.group(1)
+    log(f"✓ CSRF取得（{csrf[:10]}…）", 2)
+    log(f"ログイン: POST /index.php（loginId={LOGIN_ID}）", 1)
+    r = s.post(f"{BASE}/index.php",
+               data={"csrf": csrf, "loginId": LOGIN_ID, "password": PASSWORD}, timeout=15)
+    r.raise_for_status()
+    if "action=logout" not in r.text:
+        raise SystemExit("❌ ログイン失敗。LOGIN_ID/PASSWORD とアカウント管理の内容を確認してください。")
+    log("✓ ログイン成功", 2)
+    return s, csrf
+
+
+def search_all_pending(auto_yes=False):
+    """未取得（searchedAt が無い）顧客すべてを search.php で1件ずつ検索する。
+       これ1回で dashboard / flag-search 両方のデータが揃う（リスト元の個別選択は不要）。"""
+    banner("他媒体検索: 未取得をまとめて検索（dashboard / flag-search 共通）")
+    s, csrf = connect_and_login()
+
+    log("現在データ取得: GET /api.php", 1)
+    data = s.get(f"{BASE}/api.php", timeout=30).json()
+    clients = data.get("clients", [])
+    pending = [c for c in clients if not c.get("searchedAt")]
+    log(f"顧客 {len(clients)}件 / 未取得 {len(pending)}件", 2)
+    if not pending:
+        log("未取得の顧客はありません。検索対象なしで終了します。", 0)
+        return
+
+    # 課金が出るので確認（--yes で省略可）
+    if not auto_yes:
+        log("⚠ OpenAIのWeb検索を未取得件数ぶん実行します（API利用料が発生します）。", 1)
+        try:
+            ans = input(f"    {len(pending)}件を検索しますか？ [y/N]: ").strip().lower()
+        except EOFError:
+            ans = ""
+        if ans not in ("y", "yes"):
+            log("中止しました（確認なしで実行するには末尾に --yes を付けてください）。", 0)
+            return
+
+    ok = fail = total = 0
+    t0 = time.time()
+    for i, c in enumerate(pending, 1):
+        name = c.get("name", "(無名)")
+        log(f"[{i}/{len(pending)}] {name} を検索中...", 1)
+        st = time.time()
+        try:
+            r = s.post(f"{BASE}/search.php", json={"id": c.get("id"), "csrf": csrf},
+                       headers={"X-CSRF-Token": csrf}, timeout=150)
+            if r.status_code == 403:
+                raise SystemExit("❌ 検索権限がありません。アカウント管理で bot の権限を"
+                                 "『管理者』または『API利用可』に変更してください。")
+            r.raise_for_status()
+            res = r.json()
+            if res.get("status") == "success":
+                cnt = int(res.get("count", 0))
+                total += cnt
+                ok += 1
+                extra = f" / 0件（AI応答: {str(res['note'])[:40]}…）" if cnt == 0 and res.get("note") else ""
+                log(f"✓ {cnt}件 取得（{time.time()-st:.0f}秒）{extra}", 2)
+            else:
+                fail += 1
+                log(f"× 失敗: {res.get('message', res)}", 2)
+        except SystemExit:
+            raise
+        except Exception as e:
+            fail += 1
+            log(f"× エラー: {type(e).__name__}: {e}", 2)
+
+    log(f"🎉 検索完了！ 成功 {ok}件 / 失敗 {fail}件 / 取得URL合計 {total}件 / 所要 {time.time()-t0:.0f}秒", 0)
+    log("結果は dashboard.php と flag-search.php の両方に反映済みです", 1)
+    log("（flag-search はリスト元を選ぶだけで表示。1つずつ検索する必要はありません）", 1)
+
+
+# ----------------------------------------------------------------------
 # オーケストレーション
 # ----------------------------------------------------------------------
 def main():
-    mode = sys.argv[1] if len(sys.argv) > 1 else ""
+    args = sys.argv[1:]
+    mode = next((a for a in args if a.startswith("--") and a != "--yes"), "")
+    auto_yes = "--yes" in args
 
-    banner("作業リスト履歴 → 逆引きDB 取り込みパイプライン")
-    log(f"モード      : {'取り込みのみ' if mode=='--import-only' else 'FileMakerのみ' if mode=='--fm-only' else '全工程'}", 1)
+    label = {"--import-only": "取り込みのみ", "--fm-only": "FileMakerのみ",
+             "--search": "未取得をまとめて検索"}.get(mode, "全工程（FileMaker→取り込み）")
+    banner("作業リスト履歴 → 逆引きDB パイプライン")
+    log(f"モード      : {label}", 1)
+    log(f"取り込み先  : {BASE}", 1)
+
+    # 他媒体検索（dashboard / flag-search 共通）— ログインだけで完結
+    if mode == "--search":
+        search_all_pending(auto_yes=auto_yes)
+        return
+
     log(f"FileMaker   : {FM_FILE}", 1)
     log(f"スクリプト  : {SCRIPT_MENU} ▶ {SCRIPT_NAME}", 1)
-    log(f"取り込み先  : {BASE}", 1)
     cands = csv_candidates()
     log("CSV候補（自動検出）:", 1)
     for p in cands:
@@ -422,7 +496,7 @@ def main():
         log("✓ STEP1のみ完了（取り込みは行いません）", 0)
         return
 
-    # 全工程
+    # 全工程（FileMaker → CSV待機 → 取り込み）
     baselines = {p: (os.path.getmtime(p) if os.path.exists(p) else 0.0) for p in cands}
     run_filemaker()
     path = wait_for_fresh_csv(baselines)
