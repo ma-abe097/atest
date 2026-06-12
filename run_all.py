@@ -376,6 +376,20 @@ def _autoconfig_url():
         return ""
 
 
+def _proxy_from_pac():
+    """pypacが無い時の簡易フォールバック: PACファイルを取得して PROXY 行を1つ拾う。
+       AutoConfigURLが無い(WPAD配布)環境では取得できないので、その場合は空を返す。"""
+    url = _autoconfig_url()
+    if not url:
+        return ""
+    try:
+        txt = requests.get(url, timeout=10).text
+    except Exception:
+        return ""
+    m = re.search(r'PROXY\s+([A-Za-z0-9_.\-]+:\d+)', txt)   # 例: PROXY proxy.co.jp:8080
+    return ("http://" + m.group(1)) if m else ""
+
+
 def make_session():
     """(session, 接続方法の説明) を返す。プロキシ/PAC・IPv4強制・証明書検証・リトライを設定。"""
     if FORCE_IPV4:
@@ -404,10 +418,19 @@ def make_session():
             pac_used = True
             method = "PAC自動(pypac)" + (f": {url}" if url else ": WPAD探索")
         except ImportError:
-            s = requests.Session()
-            method = "直結（⚠ pypac 未導入）"
-            log("⚠ pypac が未導入のため PAC を使えません（社内環境では接続に失敗します）。", 1)
-            log("   PowerShellで  python -m pip install pypac  を実行してから再実行してください。", 1)
+            guessed = _proxy_from_pac()
+            if guessed:
+                s = requests.Session()
+                s.proxies.update({"http": guessed, "https": guessed})
+                s.trust_env = False
+                method = f"PAC簡易解析→PROXY {guessed}（pypac無）"
+                log(f"pypac未導入 → PACから推定したプロキシを使用: {guessed}", 1)
+            else:
+                s = requests.Session()
+                method = "直結（⚠ pypac未導入・PAC特定不可）"
+                log("⚠ pypac未導入で、PACからもプロキシを特定できませんでした（WPAD配布の可能性）。", 1)
+                log("   対処A: python -m pip install pypac を実行（推奨）", 1)
+                log("   対処B: 動いているPCでプロキシを調べ、設定 PROXY に直接指定（pypac不要）", 1)
     else:
         s = requests.Session()
         method = "直結/システム設定(trust_env)"
