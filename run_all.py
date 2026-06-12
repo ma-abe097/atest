@@ -390,6 +390,60 @@ def _proxy_from_pac():
     return ("http://" + m.group(1)) if m else ""
 
 
+def _winhttp_proxy_for_url(url):
+    """WindowsのWinHTTPで、そのURLに使う実効プロキシを 'host:port' で返す（pypac不要）。
+       WPAD自動検出＋（あれば）PACに対応。直結/失敗時は ''。ブラウザと同じ解決をする。"""
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        winhttp = ctypes.WinDLL("winhttp", use_last_error=True)
+        WINHTTP_ACCESS_TYPE_NO_PROXY   = 1
+        WINHTTP_AUTOPROXY_AUTO_DETECT  = 0x1
+        WINHTTP_AUTOPROXY_CONFIG_URL   = 0x2
+        WINHTTP_AUTO_DETECT_TYPE_DHCP  = 0x1
+        WINHTTP_AUTO_DETECT_TYPE_DNS_A = 0x2
+
+        class AUTOPROXY_OPTIONS(ctypes.Structure):
+            _fields_ = [("dwFlags", wintypes.DWORD), ("dwAutoDetectFlags", wintypes.DWORD),
+                        ("lpszAutoConfigUrl", wintypes.LPCWSTR), ("lpvReserved", ctypes.c_void_p),
+                        ("dwReserved", wintypes.DWORD), ("fAutoLogonIfChallenged", wintypes.BOOL)]
+
+        class PROXY_INFO(ctypes.Structure):
+            _fields_ = [("dwAccessType", wintypes.DWORD), ("lpszProxy", wintypes.LPWSTR),
+                        ("lpszProxyBypass", wintypes.LPWSTR)]
+
+        winhttp.WinHttpOpen.argtypes = [wintypes.LPCWSTR, wintypes.DWORD,
+                                        wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD]
+        winhttp.WinHttpOpen.restype = ctypes.c_void_p
+        winhttp.WinHttpGetProxyForUrl.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR,
+                                                  ctypes.POINTER(AUTOPROXY_OPTIONS),
+                                                  ctypes.POINTER(PROXY_INFO)]
+        winhttp.WinHttpGetProxyForUrl.restype = wintypes.BOOL
+        winhttp.WinHttpCloseHandle.argtypes = [ctypes.c_void_p]
+
+        h = winhttp.WinHttpOpen("mediadb-proxy-detect/1.0", WINHTTP_ACCESS_TYPE_NO_PROXY, None, None, 0)
+        if not h:
+            return ""
+        try:
+            opts = AUTOPROXY_OPTIONS()
+            acu = _autoconfig_url()
+            opts.dwFlags = WINHTTP_AUTOPROXY_AUTO_DETECT | (WINHTTP_AUTOPROXY_CONFIG_URL if acu else 0)
+            opts.dwAutoDetectFlags = WINHTTP_AUTO_DETECT_TYPE_DHCP | WINHTTP_AUTO_DETECT_TYPE_DNS_A
+            opts.lpszAutoConfigUrl = acu or None
+            opts.fAutoLogonIfChallenged = True
+            info = PROXY_INFO()
+            ok = winhttp.WinHttpGetProxyForUrl(h, url, ctypes.byref(opts), ctypes.byref(info))
+            if not ok:
+                return ""
+            proxy = info.lpszProxy or ""
+            return proxy.split(";")[0].strip() if proxy else ""
+        finally:
+            winhttp.WinHttpCloseHandle(h)
+    except Exception:
+        return ""
+
+
 def make_session():
     """(session, 接続方法の説明) を返す。プロキシ/PAC・IPv4強制・証明書検証・リトライを設定。"""
     if FORCE_IPV4:
@@ -406,34 +460,48 @@ def make_session():
         s.proxies.update({"http": PROXY, "https": PROXY})
         s.trust_env = False
         method = f"明示PROXY {PROXY}"
-    elif USE_PAC:
-        try:
-            from pypac import PACSession, get_pac
-            url = _autoconfig_url()
-            try:
-                pac = get_pac(url=url) if url else get_pac()
-            except Exception:
-                pac = None
-            s = PACSession(pac=pac) if pac else PACSession()
-            pac_used = True
-            method = "PAC自動(pypac)" + (f": {url}" if url else ": WPAD探索")
-        except ImportError:
-            guessed = _proxy_from_pac()
-            if guessed:
-                s = requests.Session()
-                s.proxies.update({"http": guessed, "https": guessed})
-                s.trust_env = False
-                method = f"PAC簡易解析→PROXY {guessed}（pypac無）"
-                log(f"pypac未導入 → PACから推定したプロキシを使用: {guessed}", 1)
-            else:
-                s = requests.Session()
-                method = "直結（⚠ pypac未導入・PAC特定不可）"
-                log("⚠ pypac未導入で、PACからもプロキシを特定できませんでした（WPAD配布の可能性）。", 1)
-                log("   対処A: python -m pip install pypac を実行（推奨）", 1)
-                log("   対処B: 動いているPCでプロキシを調べ、設定 PROXY に直接指定（pypac不要）", 1)
     else:
-        s = requests.Session()
-        method = "直結/システム設定(trust_env)"
+        # 1) Windows(WinHTTP)で実効プロキシを自動解決（WPAD自動検出＋PAC。pypac不要・最優先）
+        win_proxy = ""
+        try:
+            win_proxy = _winhttp_proxy_for_url(f"{BASE}/index.php")
+        except Exception:
+            win_proxy = ""
+        if win_proxy:
+            p = win_proxy if "://" in win_proxy else "http://" + win_proxy
+            s = requests.Session()
+            s.proxies.update({"http": p, "https": p})
+            s.trust_env = False
+            method = f"WinHTTP自動検出 PROXY {p}"
+        elif USE_PAC:
+            try:
+                from pypac import PACSession, get_pac
+                url = _autoconfig_url()
+                try:
+                    pac = get_pac(url=url) if url else get_pac()
+                except Exception:
+                    pac = None
+                s = PACSession(pac=pac) if pac else PACSession()
+                pac_used = True
+                method = "PAC自動(pypac)" + (f": {url}" if url else ": WPAD探索")
+            except ImportError:
+                guessed = _proxy_from_pac()
+                if guessed:
+                    s = requests.Session()
+                    s.proxies.update({"http": guessed, "https": guessed})
+                    s.trust_env = False
+                    method = f"PAC簡易解析→PROXY {guessed}（pypac無）"
+                    log(f"pypac未導入 → PACから推定したプロキシを使用: {guessed}", 1)
+                else:
+                    s = requests.Session()
+                    method = "直結（⚠ 自動検出不可）"
+                    log("⚠ プロキシを自動検出できませんでした（WinHTTP/PAC/pypac いずれも不可）。", 1)
+                    log("   対処A: python -m pip install pypac を実行", 1)
+                    log("   対処B: 下記でプロキシを調べ、設定 PROXY に直接指定（pypac不要・確実）:", 1)
+                    log(f'        PowerShell> $u=[Uri]"{BASE}/index.php"; ([System.Net.WebRequest]::GetSystemWebProxy()).GetProxy($u).AbsoluteUri', 2)
+        else:
+            s = requests.Session()
+            method = "直結/システム設定(trust_env)"
 
     s.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) mediadb-import/1.0"})
     s.verify = VERIFY_SSL
