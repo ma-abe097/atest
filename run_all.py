@@ -42,6 +42,8 @@ SCRIPT_MENU    = "スクリプト"         # メニュー名（英語版FileMake
 SCRIPT_KEY     = "m"                  # メニューを開いた後、この先頭文字で media-db を選ぶ（空ならSCRIPT_NAMEの頭文字）
 FM_WINDOW_WAIT = 60                  # FileMakerウィンドウが出るまでの最大待機秒
 FM_SETTLE_WAIT = 4                   # ウィンドウ検出後、操作開始までの待機秒（ログイン無しなので短め）
+FM_ACCOUNT     = "list"              # 開く時にアカウント/パスワードを聞かれた場合のアカウント名
+FM_PASSWORD    = "list"              # 同パスワード（聞かれなければ無視）
 
 # --- STEP3: 取り込み先サイト ---
 BASE     = "https://s-benri.heteml.net/atest/media-db"
@@ -141,6 +143,82 @@ def pick_existing_csv():
 
 
 # ----------------------------------------------------------------------
+# FileMakerのログイン（アカウント/パスワード）ダイアログ対応
+# ----------------------------------------------------------------------
+def _looks_like_login_dialog(w):
+    """そのウィンドウが『アカウント/パスワード』入力ダイアログらしければ Edit一覧を返す。"""
+    try:
+        cls = w.class_name() or ""
+    except Exception:
+        cls = ""
+    # ターミナル/ブラウザ等の無関係ウィンドウは対象外（誤入力防止）
+    if any(x in cls for x in ("Console", "Cascadia", "Chrome", "Mozilla")):
+        return None
+    try:
+        edits = w.descendants(control_type="Edit")
+        btns = [(b.window_text() or "") for b in w.descendants(control_type="Button")]
+    except Exception:
+        return None
+    has_ok = any(re.search(r"OK|開く|サインイン|ログイン", b) for b in btns)
+    has_cancel = any(re.search(r"キャンセル|Cancel", b) for b in btns)
+    # 2つ以上の入力欄＋OK系＋キャンセル系 → ログインダイアログとみなす（メイン画面は該当しない）
+    if len(edits) >= 2 and has_ok and has_cancel:
+        return edits
+    return None
+
+
+def handle_filemaker_login(timeout=25):
+    """開いた直後にアカウント/パスワードを聞かれたら FM_ACCOUNT/FM_PASSWORD を入力する。
+       聞かれなければ（自動ログイン等）何もしないで進む。"""
+    from pywinauto import Desktop
+    from pywinauto.keyboard import send_keys
+    log(f"ログイン要求の確認中（最大{timeout}秒。出たら ID/PW に『{FM_ACCOUNT}』を入力）...", 1)
+    end = time.time() + timeout
+    while time.time() < end:
+        main_ready, dlg, edits = False, None, None
+        try:
+            for w in Desktop(backend="uia").windows():
+                try:
+                    t = w.window_text() or ""
+                except Exception:
+                    t = ""
+                if t == DB_NAME:
+                    main_ready = True       # メイン画面が出た＝ログイン不要だった
+                    continue
+                e = _looks_like_login_dialog(w)
+                if e is not None:
+                    dlg, edits = w, e
+                    break
+        except Exception:
+            pass
+
+        if dlg is not None:
+            log("ログイン要求を検出 → ID/パスワードを入力します", 2)
+            try:
+                dlg.set_focus()
+                time.sleep(0.2)
+                try:
+                    edits[0].set_focus()   # 1つ目（アカウント欄）へ
+                except Exception:
+                    pass
+                time.sleep(0.2)
+                # アカウント → Tab → パスワード → Enter（各欄は念のため全選択して上書き）
+                send_keys("^a{BACKSPACE}" + FM_ACCOUNT + "{TAB}^a{BACKSPACE}" + FM_PASSWORD + "{ENTER}")
+                log(f"✓ アカウント/パスワードに『{FM_ACCOUNT}』を入力して送信しました", 2)
+            except Exception as ex:
+                log(f"× 自動入力に失敗（{type(ex).__name__}）。手動で {FM_ACCOUNT}/{FM_PASSWORD} を入力してください。", 2)
+            time.sleep(2)
+            return True
+
+        if main_ready:
+            log("ログイン要求なし（認証不要 or 自動ログイン）。そのまま進みます。", 2)
+            return False
+        time.sleep(1)
+    log("ログイン要求は検出されませんでした。そのまま進みます。", 2)
+    return False
+
+
+# ----------------------------------------------------------------------
 # STEP1: FileMakerを開いて「スクリプト」メニューから media-db を実行
 # ----------------------------------------------------------------------
 def run_filemaker():
@@ -163,6 +241,9 @@ def run_filemaker():
     # 1) ファイルを開く
     log("FileMakerでファイルを開いています...", 1)
     os.startfile(FM_PATH)
+
+    # 1.5) アカウント/パスワードを聞かれたら入力（聞かれなければスキップ）
+    handle_filemaker_login()
 
     # 2) FileMakerウィンドウの出現を待つ（win32優先＝メニューを名前で直接実行できる）
     log(f"FileMakerウィンドウの出現を待機中（最大{FM_WINDOW_WAIT}秒）...", 1)
