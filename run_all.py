@@ -2,7 +2,7 @@
 作業リスト履歴(FileMaker) → 逆引きDB(サイト) 一括取り込みパイプライン
 ============================================================================
 ワンクリックで以下を順に実行する:
-  STEP1  共有上の .fmp12 を開き、fmp:// でスクリプト『media-db』を実行
+  STEP1  共有上の .fmp12 を開き、FileMakerの「スクリプト」メニューから『media-db』を実行
          （= デスクトップに 逆引き.csv が書き出される想定）
   STEP2  逆引き.csv が「新しく書き出される（更新される）」のを待つ
   STEP3  サイトに ID/パスワードでログインし、register.php と同じ規則で取り込み
@@ -15,7 +15,8 @@
   python run_all.py --fm-only       # FileMakerで media-db 実行まで（取り込みなし）
 
 必要ライブラリ:
-  python -m pip install requests
+  python -m pip install requests pywinauto
+  （pywinauto は STEP1 のメニュー操作に使用。--import-only のみなら requests だけでOK）
 """
 import os
 import sys
@@ -25,16 +26,17 @@ import re
 import time
 import random
 import datetime as dt
-from urllib.parse import quote
 
 import requests
 
 # ========== 設定（ここだけ書き換える） ==========
 # --- STEP1: FileMaker ---
-UNC_DIR      = r"\\192.168.61.42\marketing\00_マーケティング準備室\集計\02_リスト運用状況\日報"
-FM_FILE      = "202606_作業リスト履歴.fmp12"
-SCRIPT_NAME  = "media-db"
-FM_OPEN_WAIT = 15          # ファイルが開ききるまでの待機秒（遅い/重い場合は増やす）
+UNC_DIR        = r"\\192.168.61.42\marketing\00_マーケティング準備室\集計\02_リスト運用状況\日報"
+FM_FILE        = "202606_作業リスト履歴.fmp12"
+SCRIPT_NAME    = "media-db"          # 「スクリプト」メニュー内の項目名（完全一致）
+SCRIPT_MENU    = "スクリプト"         # メニュー名（英語版FileMakerなら "Scripts"）
+FM_WINDOW_WAIT = 60                  # FileMakerウィンドウが出るまでの最大待機秒
+FM_SETTLE_WAIT = 12                  # ウィンドウ検出後、操作開始までの待機秒（ログイン猶予）
 
 # --- STEP3: 取り込み先サイト ---
 BASE     = "https://s-benri.heteml.net/atest/media-db"
@@ -47,7 +49,6 @@ CSV_WAIT_TIMEOUT = 180     # CSVが更新されるのを待つ最大秒
 # ================================================
 
 FM_PATH   = os.path.join(UNC_DIR, FM_FILE)
-DB_NAME   = os.path.splitext(FM_FILE)[0]   # 拡張子を除いた名前 = fmp:// で使うDB名
 HEADER_RE = re.compile(r"NyoiBow|シリアル|顧客名|会社名|作業日|リストカテゴリー", re.I)
 
 
@@ -67,10 +68,11 @@ def banner(title):
 
 
 # ----------------------------------------------------------------------
-# STEP1: FileMakerを開いて media-db を実行
+# STEP1: FileMakerを開いて「スクリプト」メニューから media-db を実行
 # ----------------------------------------------------------------------
 def run_filemaker():
-    banner("STEP1: FileMaker を開いて media-db を実行")
+    banner("STEP1: FileMaker を開いて media-db を実行（メニュー操作）")
+
     log(f"共有への接続を確認中: {UNC_DIR}", 1)
     if not os.path.exists(FM_PATH):
         raise SystemExit(
@@ -78,22 +80,90 @@ def run_filemaker():
             f"   共有(\\\\192.168.61.42\\marketing)に接続できているか、"
             f"一度エクスプローラーで開いて認証が通るか確認してください。"
         )
-    size_kb = os.path.getsize(FM_PATH) / 1024
-    log(f"✓ ファイルを確認: {FM_FILE}（{size_kb:,.0f} KB）", 1)
+    log(f"✓ ファイルを確認: {FM_FILE}（{os.path.getsize(FM_PATH)/1024:,.0f} KB）", 1)
 
+    try:
+        from pywinauto import Application, Desktop
+        from pywinauto.keyboard import send_keys
+    except ImportError:
+        raise SystemExit("❌ pywinauto が必要です。 python -m pip install pywinauto を実行してください。")
+
+    # 1) ファイルを開く
     log("FileMakerでファイルを開いています...", 1)
     os.startfile(FM_PATH)
 
-    for remaining in range(FM_OPEN_WAIT, 0, -1):
+    # 2) FileMakerウィンドウの出現を待つ
+    log(f"FileMakerウィンドウの出現を待機中（最大{FM_WINDOW_WAIT}秒）...", 1)
+    app = None
+    deadline = time.time() + FM_WINDOW_WAIT
+    while time.time() < deadline:
+        try:
+            app = Application(backend="uia").connect(
+                title_re=r".*(FileMaker|" + re.escape(os.path.splitext(FM_FILE)[0]) + r").*",
+                timeout=1)
+            break
+        except Exception:
+            time.sleep(1)
+    if app is None:
+        raise SystemExit("❌ FileMakerのウィンドウが見つかりませんでした。起動やログインを確認してください。")
+    log(f"✓ ウィンドウ検出: 「{app.top_window().window_text()}」", 1)
+
+    # 3) 開ききる/ログインの猶予
+    for remaining in range(FM_SETTLE_WAIT, 0, -1):
         if remaining % 5 == 0 or remaining <= 3:
-            log(f"起動待機中... 残り {remaining} 秒（ログイン画面が出たらログインを）", 2)
+            log(f"操作開始まで待機... 残り {remaining} 秒（ログイン画面が出たらログインを）", 2)
         time.sleep(1)
 
-    url = f"fmp://$/{quote(DB_NAME)}?script={quote(SCRIPT_NAME)}"
-    log(f"fmp:// URL を送信します:", 1)
-    log(url, 2)
-    os.startfile(url)
-    log(f"✓ スクリプト『{SCRIPT_NAME}』の実行リクエストを送信しました", 1)
+    win = app.top_window()          # 操作直前に最新のトップウィンドウを取得
+    log(f"対象ウィンドウ: 「{win.window_text()}」", 1)
+
+    # 4) 「スクリプト」メニュー → media-db を実行（複数戦略）
+    log(f"『{SCRIPT_MENU}』メニューから『{SCRIPT_NAME}』を実行します...", 1)
+    ran = False
+
+    # 方法A: UIA でメニュー項目を「名前で」クリック
+    try:
+        win.set_focus()
+        time.sleep(0.4)
+        log("方法A: メニュー項目を名前でクリック（UIA）...", 2)
+        win.child_window(title=SCRIPT_MENU, control_type="MenuItem").click_input()
+        time.sleep(0.8)
+        item = Desktop(backend="uia").window(title=SCRIPT_NAME, control_type="MenuItem")
+        item.wait("visible", timeout=5)
+        item.click_input()
+        ran = True
+        log("✓ メニューからクリックしました（UIA）", 2)
+    except Exception as e:
+        log(f"× UIAでのクリック不可（{type(e).__name__}）→ キーボードに切替", 2)
+        try:
+            send_keys("{ESC}{ESC}")     # 開きかけのメニューを閉じる
+        except Exception:
+            pass
+
+    # 方法B: キーボード（Alt+S でメニュー → 先頭文字 → Enter）
+    if not ran:
+        try:
+            win.set_focus()
+            time.sleep(0.4)
+            log("方法B: キーボード操作（Alt+S → 先頭文字 → Enter）...", 2)
+            send_keys("%s")                       # Alt+S = スクリプトメニュー
+            time.sleep(0.8)
+            send_keys(SCRIPT_NAME[0])             # 先頭文字 'm' で media-db へジャンプ
+            time.sleep(0.3)
+            send_keys("{ENTER}")
+            ran = True
+            log("✓ キーボードで実行しました", 2)
+        except Exception as e:
+            log(f"× キーボード操作も失敗（{type(e).__name__}）", 2)
+
+    if not ran:
+        raise SystemExit(
+            "❌ media-db をメニューから実行できませんでした。\n"
+            f"   ・『{SCRIPT_MENU}』メニューに『{SCRIPT_NAME}』が表示されているか\n"
+            "   ・メニュー名（日本語『スクリプト』か英語『Scripts』か）\n"
+            "   を確認し、画面のスクショをいただければ合わせて調整します。"
+        )
+    log(f"✓ 『{SCRIPT_NAME}』を実行しました", 1)
 
 
 # ----------------------------------------------------------------------
@@ -138,8 +208,7 @@ def read_csv_rows(path):
     """UTF-8(BOM可)→ダメならShift_JISで読み、(行×列, 使用エンコーディング) を返す。"""
     with open(path, "rb") as f:
         raw = f.read()
-    used = "utf-8(置換)"
-    text = None
+    used, text = "utf-8(置換)", None
     for enc in ("utf-8-sig", "cp932"):
         try:
             text = raw.decode(enc); used = enc; break
@@ -270,7 +339,7 @@ def main():
     banner("作業リスト履歴 → 逆引きDB 取り込みパイプライン")
     log(f"モード      : {'取り込みのみ' if mode=='--import-only' else 'FileMakerのみ' if mode=='--fm-only' else '全工程'}", 1)
     log(f"FileMaker   : {FM_FILE}", 1)
-    log(f"スクリプト  : {SCRIPT_NAME}", 1)
+    log(f"スクリプト  : {SCRIPT_MENU} ▶ {SCRIPT_NAME}", 1)
     log(f"CSV         : {CSV_PATH}", 1)
     log(f"取り込み先  : {BASE}", 1)
 
@@ -287,9 +356,8 @@ def main():
     if not wait_for_fresh_csv(baseline):
         raise SystemExit(
             "❌ 制限時間内に 逆引き.csv が更新されませんでした。\n"
-            "   ・media-db が実行されたか（fmurl 拡張アクセス権が有効か）\n"
+            "   ・media-db が実行されCSVを書き出したか\n"
             f"   ・書き出し先が {CSV_PATH} になっているか\n"
-            "   ・FileMakerの起動が遅い場合は FM_OPEN_WAIT を増やす\n"
             "   を確認してください。--import-only で手動CSVだけ取り込むことも可能です。"
         )
     import_csv()
